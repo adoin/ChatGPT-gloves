@@ -8,8 +8,8 @@ Conversation Lifeboat watches transcript size, effective context pressure, and r
 
 The plugin contains:
 
-- `conversation-handoff`: a confirmation-gated Skill that writes a durable active specification and starts or prepares a fresh task.
-- `spec-update`: an in-place Skill that updates the current specification without creating a new task. A single update reconciles active requirements, newly evidenced prohibited approaches, verified implemented specifications, and deliberately superseded specifications.
+- `conversation-handoff`: a confirmation-gated Skill that extracts specification-owned detail from applicable `AGENTS.md` files, writes a durable active specification, and starts or prepares a fresh task.
+- `spec-update`: an in-place Skill that extracts specification-owned detail from applicable `AGENTS.md` files and updates the current specification without creating a new task. A single update reconciles active requirements, newly evidenced prohibited approaches, verified implemented specifications, and deliberately superseded specifications.
 - Lifecycle hooks for `SessionStart`, `PostCompact`, and `UserPromptSubmit`.
 - A dependency-free Node.js monitor that reads only a bounded transcript tail, even when the JSONL is many gigabytes.
 
@@ -46,6 +46,7 @@ $conversation-handoff Preserve the current state in a specification and continue
 
 In ChatGPT, type `@` and select **Specification Update** or **Conversation Handoff**. `spec-update` never creates, forks, archives, or switches tasks. During one update it may:
 
+- move module requirements, implementation state, decisions, and evidenced prohibitions out of `AGENTS.md` into their authoritative lifecycle documents while leaving cross-task rules and specification entry links behind;
 - keep approved unfinished requirements under `.agents/notes/active/`;
 - record evidenced failed or forbidden approaches under `.agents/notes/prohibited/`;
 - move completed and verified specifications to `.agents/notes/implemented/`;

@@ -1,6 +1,6 @@
 ---
 name: conversation-handoff
-description: Create a durable project specification and continue work in a fresh Codex task after the user confirms migration from a long, slow, repeatedly compacted, oversized, or unstable conversation. Also use when the user explicitly requests a context-preserving task handoff. Use spec-update instead for an in-place specification refresh without task creation.
+description: Create a durable project specification, extract specification-specific content from AGENTS.md, and continue work in a fresh Codex task after the user confirms migration from a long, slow, repeatedly compacted, oversized, or unstable conversation. Also use when the user explicitly requests a context-preserving task handoff. Use spec-update instead for an in-place specification refresh without task creation.
 ---
 
 # Conversation Handoff
@@ -20,14 +20,15 @@ For a specification update that must remain in the current task, use `$spec-upda
 
 1. Identify the repository root, current working directory, active branch, worktree state, and the applicable `AGENTS.md` files.
 2. Read [the specification lifecycle](references/spec-lifecycle.md). Create missing lifecycle directories without removing existing project conventions.
-3. Inspect only the conversation material, repository files, diffs, and validation results needed to reconstruct the current implementation state. Prefer recent decisions and observed repository state over stale plans.
-4. Read relevant documents under `.agents/notes/prohibited/`. If a repository still uses `.agents/notes/rejected/`, treat it as a legacy alias for prohibited approaches.
-5. Write one active handoff specification under `.agents/notes/active/` using [the handoff template](references/handoff-template.md). Use a stable descriptive filename; add a date only when it prevents ambiguity.
-6. Keep `AGENTS.md` concise. Add or update a specification-lifecycle section only when the repository does not already define the lifecycle. Put module-specific implementation facts in the handoff specification, not in the root instruction file. Create a nested `AGENTS.md` only for durable rules that apply to that directory across future tasks.
-7. Verify the handoff against the working tree. It must identify uncommitted changes, completed work, remaining work, validation status, relevant prohibited approaches, and one concrete next action.
-8. If the current host exposes a task-creation tool, create a new task in the same project after the specification is saved. Preserve the existing checkout when uncommitted changes must remain visible; otherwise follow the host's normal worktree behavior.
-9. Seed the new task with a short prompt that tells it to read the applicable `AGENTS.md`, the exact handoff specification, relevant prohibited notes, and then execute the stated next action. Do not paste the full specification into the prompt.
-10. If task creation is unavailable, return the exact specification path and a ready-to-paste starter prompt instead.
+3. Inspect every applicable `AGENTS.md` and only the conversation material, repository files, diffs, and validation results needed to reconstruct the current implementation state. Prefer recent decisions and observed repository state over stale plans.
+4. Reconcile every applicable `AGENTS.md` using the extraction rules in the lifecycle reference. Classify its substantive content, move specification-owned material to the smallest appropriate lifecycle document, and replace migrated detail with concise specification entry links. Do not remove a statement until its destination exists and preserves the statement's force and scope.
+5. Read relevant documents under `.agents/notes/prohibited/`. If a repository still uses `.agents/notes/rejected/`, treat it as a legacy alias for prohibited approaches.
+6. Write one active handoff specification under `.agents/notes/active/` using [the handoff template](references/handoff-template.md). Use a stable descriptive filename; add a date only when it prevents ambiguity.
+7. Leave each applicable `AGENTS.md` as a compact instruction and navigation layer: retain durable cross-task rules and material that no specification covers, plus links telling future agents where to read active and prohibited specifications. Do not duplicate specification detail there. Create a nested `AGENTS.md` only for durable rules that apply to that directory across future tasks.
+8. Verify the handoff against the working tree. It must identify uncommitted changes, completed work, remaining work, validation status, relevant prohibited approaches, one concrete next action, and evidence that extracted `AGENTS.md` instructions remain discoverable with unchanged scope.
+9. If the current host exposes a task-creation tool, create a new task in the same project after the specification is saved. Preserve the existing checkout when uncommitted changes must remain visible; otherwise follow the host's normal worktree behavior.
+10. Seed the new task with a short prompt that tells it to read the applicable `AGENTS.md`, the exact handoff specification, relevant prohibited notes, and then execute the stated next action. Do not paste the full specification into the prompt.
+11. If task creation is unavailable, return the exact specification path and a ready-to-paste starter prompt instead.
 
 ## Quality requirements
 

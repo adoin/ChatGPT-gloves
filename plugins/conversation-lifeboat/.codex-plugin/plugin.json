@@ -1,6 +1,6 @@
 {
   "name": "conversation-lifeboat",
-  "version": "0.2.0+codex.20260907064620",
+  "version": "0.2.1+codex.20260907073137",
   "description": "Maintain durable project specifications, detect overloaded Codex conversations, and hand work off safely when requested.",
   "author": {
     "name": "adoin",
