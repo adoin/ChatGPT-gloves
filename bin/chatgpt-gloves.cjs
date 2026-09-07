@@ -26,17 +26,18 @@ function verify() {
     throw new Error(`Marketplace source resolves to an unexpected path: ${resolvedSource}`);
   }
 
+  const requiredSkills = ["conversation-handoff", "spec-update"];
   for (const required of [
     path.join(pluginPath, "hooks", "hooks.json"),
-    path.join(pluginPath, "skills", "conversation-handoff", "SKILL.md"),
-    path.join(pluginPath, "scripts", "conversation-health.cjs")
+    path.join(pluginPath, "scripts", "conversation-health.cjs"),
+    ...requiredSkills.map((skill) => path.join(pluginPath, "skills", skill, "SKILL.md"))
   ]) {
     if (!fs.existsSync(required)) {
       throw new Error(`Required plugin file is missing: ${required}`);
     }
   }
 
-  process.stdout.write(`Verified ${marketplace.name}/${manifest.name} v${manifest.version}.\n`);
+  process.stdout.write(`Verified ${marketplace.name}/${manifest.name} v${manifest.version} with ${requiredSkills.length} skills.\n`);
 }
 
 function extract(targetArg) {

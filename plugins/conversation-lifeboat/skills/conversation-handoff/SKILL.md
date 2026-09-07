@@ -1,11 +1,13 @@
 ---
 name: conversation-handoff
-description: Create a durable project specification and continue work in a fresh Codex task after the user confirms migration from a long, slow, repeatedly compacted, oversized, or unstable conversation. Also use when the user explicitly requests a context-preserving task handoff. Do not migrate merely because a conversation is long or before confirmation.
+description: Create a durable project specification and continue work in a fresh Codex task after the user confirms migration from a long, slow, repeatedly compacted, oversized, or unstable conversation. Also use when the user explicitly requests a context-preserving task handoff. Use spec-update instead for an in-place specification refresh without task creation.
 ---
 
 # Conversation Handoff
 
 Move useful project state into repository-owned documentation, then start a clean task from that documentation. Never copy the entire transcript into the new task.
+
+For a specification update that must remain in the current task, use `$spec-update` instead.
 
 ## Authorization boundary
 

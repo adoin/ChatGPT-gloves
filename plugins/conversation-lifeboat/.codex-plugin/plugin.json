@@ -1,25 +1,36 @@
 {
   "name": "conversation-lifeboat",
-  "version": "0.1.0",
-  "description": "Detect overloaded Codex conversations and hand work off to a fresh task through a durable project specification.",
+  "version": "0.2.0+codex.20260907064620",
+  "description": "Maintain durable project specifications, detect overloaded Codex conversations, and hand work off safely when requested.",
   "author": {
     "name": "adoin",
     "url": "https://github.com/adoin"
   },
   "homepage": "https://github.com/adoin/ChatGPT-gloves",
   "repository": "https://github.com/adoin/ChatGPT-gloves",
-  "keywords": ["codex", "conversation", "handoff", "hooks", "skills"],
+  "keywords": [
+    "codex",
+    "conversation",
+    "handoff",
+    "hooks",
+    "skills"
+  ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Conversation Lifeboat",
-    "shortDescription": "Move overloaded Codex conversations into clean tasks.",
-    "longDescription": "Monitors transcript and context pressure, warns before the conversation becomes unusable, and provides a confirmation-gated workflow that writes a durable handoff specification before continuing in a fresh task.",
+    "shortDescription": "Keep project specs current and move overloaded tasks safely.",
+    "longDescription": "Maintains active project specifications and their prohibited, implemented, and superseded states without leaving the current task, while also monitoring transcript pressure and providing a confirmation-gated handoff into a fresh task.",
     "developerName": "adoin",
     "category": "Productivity",
-    "capabilities": ["Conversation health monitoring", "Specification handoff"],
+    "capabilities": [
+      "Conversation health monitoring",
+      "Specification lifecycle updates",
+      "Specification handoff"
+    ],
     "defaultPrompt": [
       "Assess this task and prepare a safe handoff if it is overloaded.",
-      "Preserve this conversation in a spec and continue in a fresh task."
+      "Preserve this conversation in a spec and continue in a fresh task.",
+      "Update the current project specification without creating a new task."
     ],
     "brandColor": "#FF5A1F",
     "composerIcon": "./assets/conversation-lifeboat.png",

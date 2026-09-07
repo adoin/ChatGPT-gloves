@@ -1,0 +1,7 @@
+interface:
+  display_name: "Specification Update"
+  short_description: "Refresh specs and reconcile their lifecycle in place."
+  default_prompt: "Use $spec-update to refresh the current project specification without creating a new task."
+
+policy:
+  allow_implicit_invocation: true
