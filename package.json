@@ -1,7 +1,8 @@
 {
   "name": "chatgpt-gloves",
   "version": "0.2.1",
-  "description": "Reusable ChatGPT and Codex plugins for conversation safety and handoff.",
+  "private": true,
+  "description": "Development tooling for the ChatGPT Gloves Codex marketplace.",
   "license": "MIT",
   "author": "adoin",
   "homepage": "https://github.com/adoin/ChatGPT-gloves#readme",
@@ -22,24 +23,11 @@
     "spec-update"
   ],
   "type": "commonjs",
-  "bin": {
-    "chatgpt-gloves": "bin/chatgpt-gloves.cjs"
-  },
-  "files": [
-    ".agents/plugins/marketplace.json",
-    "plugins",
-    "bin",
-    "README.md",
-    "LICENSE"
-  ],
   "scripts": {
     "test": "node --test tests/*.test.cjs && node bin/chatgpt-gloves.cjs verify",
-    "prepublishOnly": "npm test"
+    "prepublishOnly": "node -e \"console.error('npm publishing is disabled; release the GitHub Codex marketplace instead.'); process.exit(1)\""
   },
   "engines": {
     "node": ">=18"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

@@ -52,16 +52,9 @@ In ChatGPT, type `@` and select **Specification Update** or **Conversation Hando
 - move completed and verified specifications to `.agents/notes/implemented/`;
 - move deliberately replaced specifications to `.agents/notes/superseded/` and cross-link the replacement.
 
-## Install through npm
+## Distribution policy
 
-The npm package carries the same marketplace and can either print the hosted setup values or extract an offline/local copy:
-
-```text
-npx chatgpt-gloves
-npx chatgpt-gloves extract ./chatgpt-gloves-marketplace
-```
-
-After extraction, add the resulting directory as a local marketplace in ChatGPT Desktop. The GitHub marketplace is preferred because ChatGPT can sync later releases automatically.
+The GitHub-backed Codex marketplace is the only supported installation and update channel. The previously published `chatgpt-gloves` npm package is a frozen legacy snapshot and will not receive plugin updates.
 
 ## Configuration
 
