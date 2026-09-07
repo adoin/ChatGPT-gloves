@@ -1,0 +1,29 @@
+{
+  "name": "conversation-lifeboat",
+  "version": "0.1.0",
+  "description": "Detect overloaded Codex conversations and hand work off to a fresh task through a durable project specification.",
+  "author": {
+    "name": "adoin",
+    "url": "https://github.com/adoin"
+  },
+  "homepage": "https://github.com/adoin/ChatGPT-gloves",
+  "repository": "https://github.com/adoin/ChatGPT-gloves",
+  "keywords": ["codex", "conversation", "handoff", "hooks", "skills"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Conversation Lifeboat",
+    "shortDescription": "Move overloaded Codex conversations into clean tasks.",
+    "longDescription": "Monitors transcript and context pressure, warns before the conversation becomes unusable, and provides a confirmation-gated workflow that writes a durable handoff specification before continuing in a fresh task.",
+    "developerName": "adoin",
+    "category": "Productivity",
+    "capabilities": ["Conversation health monitoring", "Specification handoff"],
+    "defaultPrompt": [
+      "Assess this task and prepare a safe handoff if it is overloaded.",
+      "Preserve this conversation in a spec and continue in a fresh task."
+    ],
+    "brandColor": "#FF5A1F",
+    "composerIcon": "./assets/conversation-lifeboat.png",
+    "logo": "./assets/conversation-lifeboat.png",
+    "logoDark": "./assets/conversation-lifeboat.png"
+  }
+}

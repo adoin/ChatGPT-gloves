@@ -1,0 +1,20 @@
+{
+  "name": "chatgpt-gloves",
+  "interface": {
+    "displayName": "ChatGPT Gloves"
+  },
+  "plugins": [
+    {
+      "name": "conversation-lifeboat",
+      "source": {
+        "source": "local",
+        "path": "./plugins/conversation-lifeboat"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

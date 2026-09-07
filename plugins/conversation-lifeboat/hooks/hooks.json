@@ -1,0 +1,45 @@
+{
+  "description": "Monitor Codex conversation health and suggest a confirmation-gated handoff before oversized tasks become unusable.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"require(require('node:path').join(process.env.PLUGIN_ROOT,'scripts','conversation-health.cjs'))\"",
+            "timeout": 8,
+            "statusMessage": "Checking conversation health",
+            "additionalContextLimit": 800
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"require(require('node:path').join(process.env.PLUGIN_ROOT,'scripts','conversation-health.cjs'))\"",
+            "timeout": 8,
+            "statusMessage": "Recording conversation compaction"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"require(require('node:path').join(process.env.PLUGIN_ROOT,'scripts','conversation-health.cjs'))\"",
+            "timeout": 8,
+            "statusMessage": "Checking conversation health",
+            "additionalContextLimit": 800
+          }
+        ]
+      }
+    ]
+  }
+}

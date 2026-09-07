@@ -1,0 +1,44 @@
+{
+  "name": "chatgpt-gloves",
+  "version": "0.1.0",
+  "description": "Reusable ChatGPT and Codex plugins for conversation safety and handoff.",
+  "license": "MIT",
+  "author": "adoin",
+  "homepage": "https://github.com/adoin/ChatGPT-gloves#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adoin/ChatGPT-gloves.git"
+  },
+  "bugs": {
+    "url": "https://github.com/adoin/ChatGPT-gloves/issues"
+  },
+  "keywords": [
+    "chatgpt",
+    "codex",
+    "plugin",
+    "skill",
+    "hooks",
+    "conversation-handoff"
+  ],
+  "type": "commonjs",
+  "bin": {
+    "chatgpt-gloves": "bin/chatgpt-gloves.cjs"
+  },
+  "files": [
+    ".agents/plugins/marketplace.json",
+    "plugins",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.cjs && node bin/chatgpt-gloves.cjs verify",
+    "prepublishOnly": "npm test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Conversation Handoff"
+  short_description: "Move overloaded tasks into clean, durable handoffs."
+  default_prompt: "Use $conversation-handoff to preserve this task in a specification and continue safely in a fresh task."
+
+policy:
+  allow_implicit_invocation: true
