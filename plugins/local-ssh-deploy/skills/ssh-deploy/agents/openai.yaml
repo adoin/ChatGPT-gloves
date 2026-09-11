@@ -1,0 +1,4 @@
+interface:
+  display_name: "SSH Deploy"
+  short_description: "Publish local builds through SSH."
+  default_prompt: "Deploy this local site using my SSH connection configuration."

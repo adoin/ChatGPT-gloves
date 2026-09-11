@@ -2,6 +2,10 @@
 
 Reusable Codex plugins and skills.
 
+## Local SSH Deploy
+
+Local SSH Deploy publishes the current local project to a user-specified POSIX server using the machine's own `ssh`, `scp`, and `tar` executables. It requires a dry run and confirmation of the exact destination and deployment command, accepts only an absolute private-key path, and never reads or stores private key contents. See the [plugin guide](plugins/local-ssh-deploy/README.md) for prerequisites and usage.
+
 ## Conversation Lifeboat
 
 Conversation Lifeboat watches transcript size, effective context pressure, and repeated compaction. At serious thresholds it asks the user whether to preserve the current implementation state in a project specification and continue in a fresh task.
@@ -31,7 +35,7 @@ The equivalent Codex command is:
 codex plugin marketplace add https://github.com/adoin/ChatGPT-gloves
 ```
 
-Open `/plugins`, select the `chatgpt-gloves` marketplace, and install `conversation-lifeboat`. Review and trust its hook definition when Codex prompts you; installing a plugin does not silently trust executable hooks.
+Open `/plugins`, select the `chatgpt-gloves` marketplace, and install `conversation-lifeboat` or `local-ssh-deploy`. Review and trust the Conversation Lifeboat hook definition when Codex prompts you; installing a plugin does not silently trust executable hooks.
 
 Node.js must be available on `PATH` for the hook process. No npm dependencies are required.
 

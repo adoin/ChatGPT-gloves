@@ -1,0 +1,37 @@
+{
+  "name": "local-ssh-deploy",
+  "version": "0.1.0+codex.20260911071121",
+  "description": "Publish the current local project to a user-specified server through confirmation-gated SSH deployment.",
+  "author": {
+    "name": "adoin",
+    "url": "https://github.com/adoin"
+  },
+  "homepage": "https://github.com/adoin/ChatGPT-gloves/tree/main/plugins/local-ssh-deploy",
+  "repository": "https://github.com/adoin/ChatGPT-gloves",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "deploy",
+    "ssh",
+    "scp"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Local SSH Deploy",
+    "shortDescription": "Publish the current project through your local SSH client.",
+    "longDescription": "Packages the current local project, uploads it with the local OpenSSH client, and runs an explicit deployment command only after a dry run and user confirmation. Private key contents are never accepted or read.",
+    "developerName": "adoin",
+    "category": "Productivity",
+    "capabilities": [
+      "Dry-run deployment planning",
+      "Confirmation-gated SSH upload",
+      "Explicit remote deployment commands"
+    ],
+    "defaultPrompt": [
+      "Deploy this local site to my server over SSH.",
+      "Dry-run an SSH deployment of the current project.",
+      "Publish this project using my SSH key path and deploy command."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

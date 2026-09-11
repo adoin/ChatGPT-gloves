@@ -5,8 +5,6 @@ const path = require("node:path");
 
 const packageRoot = path.resolve(__dirname, "..");
 const marketplacePath = path.join(packageRoot, ".agents", "plugins", "marketplace.json");
-const pluginPath = path.join(packageRoot, "plugins", "conversation-lifeboat");
-const pluginManifestPath = path.join(pluginPath, ".codex-plugin", "plugin.json");
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -14,30 +12,50 @@ function readJson(filePath) {
 
 function verify() {
   const marketplace = readJson(marketplacePath);
-  const manifest = readJson(pluginManifestPath);
-  const entry = marketplace.plugins?.find((plugin) => plugin.name === manifest.name);
+  const pluginRequirements = [
+    {
+      name: "conversation-lifeboat",
+      files: [
+        "hooks/hooks.json",
+        "scripts/conversation-health.cjs",
+        "skills/conversation-handoff/SKILL.md",
+        "skills/spec-update/SKILL.md"
+      ]
+    },
+    {
+      name: "local-ssh-deploy",
+      files: [
+        "README.md",
+        "scripts/deploy.ps1",
+        "skills/ssh-deploy/SKILL.md"
+      ]
+    }
+  ];
 
-  if (!entry) {
-    throw new Error(`Marketplace does not reference plugin ${manifest.name}.`);
-  }
+  for (const plugin of pluginRequirements) {
+    const currentPluginPath = path.join(packageRoot, "plugins", plugin.name);
+    const currentManifestPath = path.join(currentPluginPath, ".codex-plugin", "plugin.json");
+    const manifest = readJson(currentManifestPath);
+    const entry = marketplace.plugins?.find((candidate) => candidate.name === manifest.name);
 
-  const resolvedSource = path.resolve(packageRoot, entry.source.path);
-  if (resolvedSource !== pluginPath) {
-    throw new Error(`Marketplace source resolves to an unexpected path: ${resolvedSource}`);
-  }
+    if (!entry) {
+      throw new Error(`Marketplace does not reference plugin ${manifest.name}.`);
+    }
 
-  const requiredSkills = ["conversation-handoff", "spec-update"];
-  for (const required of [
-    path.join(pluginPath, "hooks", "hooks.json"),
-    path.join(pluginPath, "scripts", "conversation-health.cjs"),
-    ...requiredSkills.map((skill) => path.join(pluginPath, "skills", skill, "SKILL.md"))
-  ]) {
-    if (!fs.existsSync(required)) {
-      throw new Error(`Required plugin file is missing: ${required}`);
+    const resolvedSource = path.resolve(packageRoot, entry.source.path);
+    if (resolvedSource !== currentPluginPath) {
+      throw new Error(`Marketplace source resolves to an unexpected path: ${resolvedSource}`);
+    }
+
+    for (const relativePath of plugin.files) {
+      const required = path.join(currentPluginPath, relativePath);
+      if (!fs.existsSync(required)) {
+        throw new Error(`Required plugin file is missing: ${required}`);
+      }
     }
   }
 
-  process.stdout.write(`Verified ${marketplace.name}/${manifest.name} v${manifest.version} with ${requiredSkills.length} skills.\n`);
+  process.stdout.write(`Verified ${marketplace.name} with ${pluginRequirements.length} plugins.\n`);
 }
 
 function extract(targetArg) {
