@@ -1,7 +1,7 @@
 {
   "name": "local-ssh-deploy",
-  "version": "0.1.0+codex.20260911071121",
-  "description": "Publish the current local project to a user-specified server through confirmation-gated SSH deployment.",
+  "version": "0.1.0+codex.20260911100954",
+  "description": "Persist encrypted SSH deployment profiles and publish local projects through confirmation-gated SSH deployment.",
   "author": {
     "name": "adoin",
     "url": "https://github.com/adoin"
@@ -18,19 +18,20 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Local SSH Deploy",
-    "shortDescription": "Publish the current project through your local SSH client.",
-    "longDescription": "Packages the current local project, uploads it with the local OpenSSH client, and runs an explicit deployment command only after a dry run and user confirmation. Private key contents are never accepted or read.",
+    "shortDescription": "Securely remember SSH targets and publish local projects.",
+    "longDescription": "Stores named deployment profiles in the current user's OS credential protection, then packages and uploads the current local project with OpenSSH and runs an explicit command only after a hashed dry run and user confirmation. Private key contents are never accepted or read.",
     "developerName": "adoin",
     "category": "Productivity",
     "capabilities": [
       "Dry-run deployment planning",
       "Confirmation-gated SSH upload",
+      "Cross-platform secure deployment profiles",
       "Explicit remote deployment commands"
     ],
     "defaultPrompt": [
-      "Deploy this local site to my server over SSH.",
-      "Dry-run an SSH deployment of the current project.",
-      "Publish this project using my SSH key path and deploy command."
+      "Save a secure SSH deployment profile for this server.",
+      "Deploy this local site using my saved production profile.",
+      "List my saved SSH deployment profiles."
     ],
     "brandColor": "#2563EB"
   }

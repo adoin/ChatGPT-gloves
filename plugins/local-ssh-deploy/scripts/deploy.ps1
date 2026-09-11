@@ -1,43 +1,35 @@
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Direct')]
 param(
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Profile')]
+    [string] $ProfileName,
+
+    [Parameter(Mandatory = $true, ParameterSetName = 'Direct')]
     [string] $HostName,
 
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Direct')]
     [ValidateRange(1, 65535)]
     [int] $Port,
 
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Direct')]
     [string] $Username,
 
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Direct')]
     [string] $IdentityFilePath,
 
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Direct')]
     [string] $RemoteDirectory,
 
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Direct')]
     [string] $DeploymentCommand,
 
     [switch] $DryRun,
-    [switch] $ConfirmDeployment
+    [switch] $ConfirmDeployment,
+    [string] $PlanHash
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-
-function Assert-NoControlCharacters {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string] $Name,
-        [Parameter(Mandatory = $true)]
-        [string] $Value
-    )
-
-    if ($Value -match '[\x00-\x1F\x7F]') {
-        throw "$Name must not contain control characters."
-    }
-}
+Import-Module (Join-Path $PSScriptRoot 'LocalSshDeploy.psm1') -Force
 
 function ConvertTo-PosixSingleQuoted {
     param([Parameter(Mandatory = $true)][string] $Value)
@@ -64,47 +56,12 @@ if ($DryRun -and $ConfirmDeployment) {
 if (-not $DryRun -and -not $ConfirmDeployment) {
     throw 'Refusing to deploy without -ConfirmDeployment. Run -DryRun first and obtain explicit user confirmation.'
 }
-
-foreach ($field in @(
-    @{ Name = 'HostName'; Value = $HostName },
-    @{ Name = 'Username'; Value = $Username },
-    @{ Name = 'IdentityFilePath'; Value = $IdentityFilePath },
-    @{ Name = 'RemoteDirectory'; Value = $RemoteDirectory },
-    @{ Name = 'DeploymentCommand'; Value = $DeploymentCommand }
-)) {
-    Assert-NoControlCharacters -Name $field.Name -Value $field.Value
+if ($DryRun -and -not [string]::IsNullOrWhiteSpace($PlanHash)) {
+    throw 'Do not supply -PlanHash during a dry run; use the hash returned by that dry run for confirmed execution.'
 }
-
-if ([string]::IsNullOrWhiteSpace($HostName) -or $HostName.StartsWith('-') -or $HostName -match '[@/\\\[\]]') {
-    throw 'HostName must be a plain DNS name, IPv4 address, or IPv6 address without user or port syntax.'
+if ($ConfirmDeployment -and ($PlanHash -notmatch '^[A-Fa-f0-9]{64}$')) {
+    throw 'Confirmed deployment requires the 64-character -PlanHash returned by the approved dry run.'
 }
-if ([System.Uri]::CheckHostName($HostName) -eq [System.UriHostNameType]::Unknown) {
-    throw 'HostName is not a valid DNS name, IPv4 address, or IPv6 address.'
-}
-if ($Username -notmatch '^[A-Za-z_][A-Za-z0-9_.-]{0,63}$') {
-    throw 'Username must start with a letter or underscore and contain only letters, digits, underscore, dot, or hyphen.'
-}
-if ($RemoteDirectory -notmatch '^/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$') {
-    throw 'RemoteDirectory must be a non-root absolute POSIX path using only letters, digits, dot, underscore, hyphen, and slash.'
-}
-if (($RemoteDirectory -split '/') | Where-Object { $_ -eq '.' -or $_ -eq '..' }) {
-    throw 'RemoteDirectory must not contain dot or dot-dot path segments.'
-}
-if ([string]::IsNullOrWhiteSpace($DeploymentCommand)) {
-    throw 'DeploymentCommand must be an explicit, non-empty command.'
-}
-if ($DeploymentCommand.Length -gt 4096) {
-    throw 'DeploymentCommand must not exceed 4096 characters.'
-}
-if (-not [System.IO.Path]::IsPathFullyQualified($IdentityFilePath)) {
-    throw 'IdentityFilePath must be an absolute local filesystem path.'
-}
-
-$identityItem = Get-Item -LiteralPath $IdentityFilePath -Force
-if ($identityItem.PSIsContainer) {
-    throw 'IdentityFilePath must identify a file, not a directory.'
-}
-$resolvedIdentityPath = $identityItem.FullName
 
 $location = Get-Location
 if ($location.Provider.Name -ne 'FileSystem') {
@@ -126,57 +83,87 @@ if (-not (Get-ChildItem -LiteralPath $projectRoot -Force | Where-Object { $_.Nam
     throw 'The current project directory has no deployable content.'
 }
 
-$comparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
-$projectPrefix = $trimmedProjectRoot + [System.IO.Path]::DirectorySeparatorChar
-if ($resolvedIdentityPath.Equals($trimmedProjectRoot, $comparison) -or $resolvedIdentityPath.StartsWith($projectPrefix, $comparison)) {
-    throw 'IdentityFilePath must be outside the project directory so the key cannot be included in the deployment archive.'
+if ($PSCmdlet.ParameterSetName -eq 'Profile') {
+    $connection = Get-DeploymentProfile -ProfileName $ProfileName -ProjectRoot $projectRoot
+}
+else {
+    $connection = Resolve-ConnectionData `
+        -HostName $HostName `
+        -Port $Port `
+        -Username $Username `
+        -IdentityFilePath $IdentityFilePath `
+        -RemoteDirectory $RemoteDirectory `
+        -DeploymentCommand $DeploymentCommand `
+        -ProjectRoot $projectRoot
 }
 
-$uploadName = '.codex-deploy-' + [System.Guid]::NewGuid().ToString('N') + '.tar.gz'
-$remoteArchive = "$RemoteDirectory/$uploadName"
-$remoteDirectoryQuoted = ConvertTo-PosixSingleQuoted $RemoteDirectory
-$remoteArchiveQuoted = ConvertTo-PosixSingleQuoted $remoteArchive
-$prepareScript = "mkdir -p -- $remoteDirectoryQuoted"
-$cleanupScript = "rm -f -- $remoteArchiveQuoted"
-$deployScript = "set -eu; trap $(ConvertTo-PosixSingleQuoted $cleanupScript) 0; tar -xzf $remoteArchiveQuoted -C $remoteDirectoryQuoted; cd -- $remoteDirectoryQuoted; $DeploymentCommand"
-
-$plan = [ordered]@{
-    dryRun = [bool] $DryRun
+$planData = [ordered]@{
     projectRoot = $projectRoot
-    destination = "$Username@$HostName`:$Port"
-    identityFilePath = $resolvedIdentityPath
-    remoteDirectory = $RemoteDirectory
-    deploymentCommand = $DeploymentCommand
+    profileName = if ($PSCmdlet.ParameterSetName -eq 'Profile') { $ProfileName } else { $null }
+    host = $connection.host
+    port = $connection.port
+    username = $connection.username
+    identityFilePath = $connection.identityFilePath
+    remoteDirectory = $connection.remoteDirectory
+    deploymentCommand = $connection.deploymentCommand
     archiveExclusions = @('.git', '.codex')
     hostKeyChecking = 'strict; the host must already exist in known_hosts'
-    stages = @(
-        'Create a temporary local tar.gz archive.',
-        'Create the remote directory through the local ssh client.',
-        'Upload the archive through the local scp client.',
-        'Extract the archive, remove the uploaded archive, and run the exact deployment command.'
-    )
+}
+$planJson = $planData | ConvertTo-Json -Depth 4 -Compress
+$planBytes = [System.Text.Encoding]::UTF8.GetBytes($planJson)
+try {
+    $computedPlanHash = [System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($planBytes)).ToLowerInvariant()
+}
+finally {
+    [System.Array]::Clear($planBytes, 0, $planBytes.Length)
 }
 
 if ($DryRun) {
-    $plan | ConvertTo-Json -Depth 4
+    [ordered]@{
+        dryRun = $true
+        planHash = $computedPlanHash
+        plan = $planData
+        stages = @(
+            'Create a temporary local tar.gz archive.',
+            'Create the remote directory through the local ssh client.',
+            'Upload the archive through the local scp client.',
+            'Extract the archive, remove the uploaded archive, and run the exact deployment command.'
+        )
+    } | ConvertTo-Json -Depth 5
     exit 0
 }
 
-$sshCommand = Get-Command 'ssh.exe' -CommandType Application
-$scpCommand = Get-Command 'scp.exe' -CommandType Application
-$tarCommand = Get-Command 'tar.exe' -CommandType Application
+if (-not $computedPlanHash.Equals($PlanHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw 'The current deployment values do not match the approved dry-run plan hash. Run a new dry run and confirm the new plan.'
+}
+
+$sshName = if ($IsWindows) { 'ssh.exe' } else { 'ssh' }
+$scpName = if ($IsWindows) { 'scp.exe' } else { 'scp' }
+$tarName = if ($IsWindows) { 'tar.exe' } else { 'tar' }
+$sshCommand = Get-Command $sshName -CommandType Application
+$scpCommand = Get-Command $scpName -CommandType Application
+$tarCommand = Get-Command $tarName -CommandType Application
 $nullConfigPath = if ($IsWindows) { 'NUL' } else { '/dev/null' }
+
+$uploadName = '.codex-deploy-' + [System.Guid]::NewGuid().ToString('N') + '.tar.gz'
+$remoteArchive = "$($connection.remoteDirectory)/$uploadName"
+$remoteDirectoryQuoted = ConvertTo-PosixSingleQuoted $connection.remoteDirectory
+$remoteArchiveQuoted = ConvertTo-PosixSingleQuoted $remoteArchive
+$prepareScript = "mkdir -p -- $remoteDirectoryQuoted"
+$cleanupScript = "rm -f -- $remoteArchiveQuoted"
+$deployScript = "set -eu; trap $(ConvertTo-PosixSingleQuoted $cleanupScript) 0; tar -xzf $remoteArchiveQuoted -C $remoteDirectoryQuoted; cd -- $remoteDirectoryQuoted; $($connection.deploymentCommand)"
+
 $commonOptions = @(
     '-F', $nullConfigPath,
-    '-i', $resolvedIdentityPath,
+    '-i', $connection.identityFilePath,
     '-o', 'BatchMode=yes',
     '-o', 'IdentitiesOnly=yes',
     '-o', 'StrictHostKeyChecking=yes',
     '-o', 'ConnectTimeout=15'
 )
-$sshArguments = @($commonOptions + @('-p', $Port.ToString(), '-l', $Username, $HostName))
-$scpHost = if ($HostName.Contains(':')) { "[$HostName]" } else { $HostName }
-$scpDestination = '{0}@{1}:{2}' -f $Username, $scpHost, $remoteArchive
+$sshArguments = @($commonOptions + @('-p', $connection.port.ToString(), '-l', $connection.username, $connection.host))
+$scpHost = if ($connection.host.Contains(':')) { "[$($connection.host)]" } else { $connection.host }
+$scpDestination = '{0}@{1}:{2}' -f $connection.username, $scpHost, $remoteArchive
 $archivePath = Join-Path ([System.IO.Path]::GetTempPath()) ('codex-deploy-' + [System.Guid]::NewGuid().ToString('N') + '.tar.gz')
 
 try {
@@ -193,7 +180,7 @@ try {
     ) -Operation 'Remote directory creation'
 
     Invoke-NativeChecked -FilePath $scpCommand.Source -ArgumentList @(
-        $commonOptions + @('-P', $Port.ToString(), $archivePath, $scpDestination)
+        $commonOptions + @('-P', $connection.port.ToString(), $archivePath, $scpDestination)
     ) -Operation 'Project upload'
 
     Invoke-NativeChecked -FilePath $sshCommand.Source -ArgumentList @(
@@ -206,4 +193,4 @@ finally {
     }
 }
 
-Write-Output "Deployment completed successfully for $Username@$HostName`:$Port$RemoteDirectory."
+Write-Output "Deployment completed successfully for $($connection.username)@$($connection.host):$($connection.port)$($connection.remoteDirectory)."

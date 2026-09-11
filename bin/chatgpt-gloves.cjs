@@ -26,7 +26,9 @@ function verify() {
       name: "local-ssh-deploy",
       files: [
         "README.md",
+        "scripts/LocalSshDeploy.psm1",
         "scripts/deploy.ps1",
+        "scripts/profiles.ps1",
         "skills/ssh-deploy/SKILL.md"
       ]
     }
