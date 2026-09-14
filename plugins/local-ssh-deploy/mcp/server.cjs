@@ -95,7 +95,7 @@ const profileFormSchema = {
 
 const tools = [
   {
-    name: 'open_profile_editor',
+    name: 'add_remote_server_connection',
     title: '打开 SSH 部署档案编辑器',
     description: 'Start the bundled interactive SSH deployment profile editor and open its randomized loopback URL in the system browser. This works without MCP elicitation and never reads private key contents.',
     inputSchema: {
@@ -671,7 +671,7 @@ async function callTool(params) {
     throw new Error('Tool name is required.');
   }
   switch (params.name) {
-    case 'open_profile_editor':
+    case 'add_remote_server_connection':
       return openProfileEditor(params.arguments || {});
     case 'save_profile':
       return saveProfile(params.arguments || {});
@@ -698,7 +698,7 @@ async function handleRequest(message) {
           title: 'Local SSH Deploy',
           version: SERVER_VERSION,
         },
-        instructions: 'Use open_profile_editor for new or replacement profiles. It starts the bundled loopback editor and opens it in the system browser without MCP elicitation. Report an error if the call fails; do not claim success before it completes. Use save_profile_with_form only as a compatibility fallback. Never request private key contents.',
+        instructions: 'Treat requests such as "添加一个远程服务器连接" as requests for a reusable SSH deployment target unless the user explicitly says Codex remote worker or remote execution host. Use add_remote_server_connection for new or replacement profiles. It starts the bundled loopback editor and opens it in the system browser without MCP elicitation. Report an error if the call fails; do not claim success before it completes. Use save_profile_with_form only as a compatibility fallback. Never request private key contents.',
       });
       return;
     case 'ping':

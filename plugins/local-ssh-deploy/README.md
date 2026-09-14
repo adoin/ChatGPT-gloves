@@ -50,7 +50,7 @@ Ask Codex:
 $ssh-deploy 新增一个名为 production 的部署连接
 ```
 
-Codex calls the bundled `open_profile_editor` MCP tool, which starts a randomized loopback URL and opens it in the system browser. The interactive editor contains:
+Codex calls the bundled `add_remote_server_connection` MCP tool, which starts a randomized loopback URL and opens it in the system browser. The interactive editor contains:
 
 - profile name at the top;
 - host and port;

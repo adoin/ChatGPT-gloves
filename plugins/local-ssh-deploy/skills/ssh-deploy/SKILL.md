@@ -1,11 +1,11 @@
 ---
 name: ssh-deploy
-description: Save user-level SSH deployment profiles securely and publish the current local project or website through the local SSH client. Use for reusable, confirmation-gated SSH/SCP deployment across Codex tasks and projects, not for configuring a server as a remote Codex worker or handling private key contents.
+description: Add and reuse secure SSH deployment connections. Use when the user says “添加一个远程服务器连接” or asks to add, save, configure, or replace a remote server connection, SSH server, or deployment target. Only route elsewhere when the user explicitly asks for a Codex remote worker or remote execution host. Never handle private key contents.
 ---
 
 # SSH Deploy
 
-Use the bundled `open_profile_editor` MCP tool to collect and save named deployment profiles through the plugin's interactive HTML editor. Use `list_profiles` to discover saved names, and `scripts/deploy.ps1` from the project directory the user wants to publish. Profiles survive conversations, project deletion, and plugin updates. The deployment script packages the current working directory, excluding `.git` and `.codex`, uploads it with the local `scp` executable, extracts it remotely, and then runs the profile's explicit deployment command.
+Use the bundled `add_remote_server_connection` MCP tool to collect and save named deployment profiles through the plugin's interactive HTML editor. Use `list_profiles` to discover saved names, and `scripts/deploy.ps1` from the project directory the user wants to publish. Profiles survive conversations, project deletion, and plugin updates. The deployment script packages the current working directory, excluding `.git` and `.codex`, uploads it with the local `scp` executable, extracts it remotely, and then runs the profile's explicit deployment command.
 
 ## Safety boundary
 
@@ -19,7 +19,7 @@ Use the bundled `open_profile_editor` MCP tool to collect and save named deploym
 ## Workflow
 
 1. When the user refers to an existing server or asks what is remembered, call `list_profiles`. Do not search projects or conversation history for connection data.
-2. When the user asks to add, configure, save, or replace a connection, call `open_profile_editor` immediately. Pass a suggested profile name only when the user already supplied one. The tool serves the bundled editor on a randomized loopback-only URL and opens it in the system browser, so it works in Full Access without MCP elicitation or client-side MCP App rendering. It also advertises the same HTML as an MCP App resource for compatible clients. Do not ask the user to paste a field template into chat, and do not claim the browser opened before the tool completes successfully.
+2. Interpret an unqualified request such as “添加一个远程服务器连接” as this plugin's reusable SSH deployment connection. Route to Codex remote-host setup only when the user explicitly mentions a Codex remote worker or remote execution host. For a new or replacement connection, call `add_remote_server_connection` immediately. Pass a suggested profile name only when the user already supplied one. The tool serves the bundled editor on a randomized loopback-only URL and opens it in the system browser, so it works in Full Access without MCP elicitation or client-side MCP App rendering. It also advertises the same HTML as an MCP App resource for compatible clients. Do not ask the user to paste a field template into chat, and do not claim the browser opened before the tool completes successfully.
 3. The editor places the profile name first and collects the six allowed fields. Its private-key field accepts manual absolute-path entry or calls `pick_identity_file` to open the operating system picker. The picker returns only the chosen path; never use ChatGPT file upload or a browser file input for a private key.
 4. The remote directory must be a non-root absolute POSIX path using only letters, digits, `.`, `_`, `-`, and `/`. The `save_profile` MCP tool and storage script validate submitted values again before saving. Use `save_profile_with_form` only as a compatibility fallback for a client that cannot render the bundled MCP App and supports MCP elicitation.
 5. Replacing an existing profile requires the user to select the form's explicit overwrite control. Deleting one still requires explicit confirmation and `profiles.ps1 -Delete -ConfirmDelete`.

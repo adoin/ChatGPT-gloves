@@ -127,13 +127,13 @@ test('MCP server advertises the embedded editor and legacy form fallback', async
   client.send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
   const listed = await client.receive();
   assert.deepEqual(listed.result.tools.map((tool) => tool.name), [
-    'open_profile_editor',
+    'add_remote_server_connection',
     'save_profile',
     'pick_identity_file',
     'save_profile_with_form',
     'list_profiles',
   ]);
-  const editorTool = listed.result.tools.find((tool) => tool.name === 'open_profile_editor');
+  const editorTool = listed.result.tools.find((tool) => tool.name === 'add_remote_server_connection');
   assert.equal(editorTool._meta.ui.resourceUri, editorUri);
   assert.equal(editorTool._meta['openai/outputTemplate'], editorUri);
   assert.match(editorTool.description, /system browser/);
@@ -224,7 +224,7 @@ test('MCP App resource has the intended field order and a path-only picker', asy
     jsonrpc: '2.0',
     id: 4,
     method: 'tools/call',
-    params: { name: 'open_profile_editor', arguments: { suggestedProfileName: 'production' } },
+    params: { name: 'add_remote_server_connection', arguments: { suggestedProfileName: 'production' } },
   });
   const opened = await client.receive();
   assert.equal(opened.result.structuredContent.suggestedProfileName, 'production');
