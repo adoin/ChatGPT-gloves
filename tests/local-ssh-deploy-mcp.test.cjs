@@ -12,6 +12,9 @@ const test = require('node:test');
 const pluginRoot = path.resolve(__dirname, '../plugins/local-ssh-deploy');
 const mcpConfigPath = path.join(pluginRoot, '.mcp.json');
 const serverPath = path.resolve(__dirname, '../plugins/local-ssh-deploy/mcp/server.cjs');
+const editorPath = path.resolve(__dirname, '../plugins/local-ssh-deploy/mcp/profile-editor.html');
+const pickerPath = path.resolve(__dirname, '../plugins/local-ssh-deploy/scripts/pick-identity-file.ps1');
+const editorUri = 'ui://local-ssh-deploy/profile-editor.html';
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'local-ssh-deploy-mcp-test-'));
@@ -108,7 +111,7 @@ test('bundled MCP config launches the server from the plugin root', () => {
   assert.equal(response.result.serverInfo.name, 'local-ssh-deploy');
 });
 
-test('MCP server advertises a native profile form and handles cancellation', async (t) => {
+test('MCP server advertises the embedded editor and legacy form fallback', async (t) => {
   const item = fixture();
   const client = startServer(item);
   t.after(() => {
@@ -120,9 +123,15 @@ test('MCP server advertises a native profile form and handles cancellation', asy
   client.send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
   const listed = await client.receive();
   assert.deepEqual(listed.result.tools.map((tool) => tool.name), [
+    'open_profile_editor',
+    'save_profile',
+    'pick_identity_file',
     'save_profile_with_form',
     'list_profiles',
   ]);
+  const editorTool = listed.result.tools.find((tool) => tool.name === 'open_profile_editor');
+  assert.equal(editorTool._meta.ui.resourceUri, editorUri);
+  assert.equal(editorTool._meta['openai/outputTemplate'], editorUri);
 
   client.send({
     jsonrpc: '2.0',
@@ -171,6 +180,62 @@ test('MCP server advertises a native profile form and handles cancellation', asy
   assert.equal(declined.id, 4);
   assert.equal(declined.result.isError, true);
   assert.match(declined.result.content[0].text, /permission policy.*Full Access/i);
+});
+
+test('MCP App resource has the intended field order and a path-only picker', async (t) => {
+  const item = fixture();
+  const client = startServer(item);
+  t.after(() => {
+    client.stop();
+    fs.rmSync(item.root, { recursive: true, force: true });
+  });
+  await initialize(client);
+
+  client.send({ jsonrpc: '2.0', id: 2, method: 'resources/list', params: {} });
+  const listed = await client.receive();
+  assert.equal(listed.result.resources[0].uri, editorUri);
+  assert.equal(listed.result.resources[0].mimeType, 'text/html;profile=mcp-app');
+
+  client.send({
+    jsonrpc: '2.0',
+    id: 3,
+    method: 'resources/read',
+    params: { uri: editorUri },
+  });
+  const resource = await client.receive();
+  const content = resource.result.contents[0];
+  assert.equal(content.mimeType, 'text/html;profile=mcp-app');
+  assert.equal(content._meta.ui.prefersBorder, true);
+  assert.equal(content.text, fs.readFileSync(editorPath, 'utf8'));
+  assert.ok(content.text.indexOf('name="profileName"') < content.text.indexOf('name="host"'));
+  assert.ok(content.text.indexOf('name="profileName"') < content.text.indexOf('name="deploymentCommand"'));
+  assert.match(content.text, /id="pick-file"/);
+  assert.match(content.text, /callTool\('pick_identity_file'/);
+  assert.doesNotMatch(content.text, /type="file"/);
+  assert.doesNotMatch(content.text, /selectFiles|uploadFile/);
+
+  client.send({
+    jsonrpc: '2.0',
+    id: 4,
+    method: 'tools/call',
+    params: { name: 'open_profile_editor', arguments: { suggestedProfileName: 'production' } },
+  });
+  const opened = await client.receive();
+  assert.equal(opened.result.structuredContent.suggestedProfileName, 'production');
+  assert.equal(opened.result._meta.ui.resourceUri, editorUri);
+});
+
+test('Windows picker asks for a path without reading the selected file', { skip: process.platform !== 'win32' }, () => {
+  const script = fs.readFileSync(pickerPath, 'utf8');
+  assert.match(script, /OpenFileDialog/);
+  assert.match(script, /GetFullPath/);
+  assert.doesNotMatch(script, /Get-Content|ReadAll|OpenRead|ReadToEnd/);
+
+  const parsed = spawnSync('pwsh.exe', [
+    '-NoLogo', '-NoProfile', '-Command',
+    `$errors = $null; [System.Management.Automation.Language.Parser]::ParseFile('${pickerPath.replaceAll("'", "''")}', [ref]$null, [ref]$errors) > $null; if ($errors.Count) { $errors | Out-String | Write-Error; exit 1 }`,
+  ], { encoding: 'utf8', windowsHide: true });
+  assert.equal(parsed.status, 0, parsed.stderr);
 });
 
 test('accepted MCP form writes an encrypted profile without key contents', { skip: process.platform !== 'win32' }, async (t) => {
@@ -225,4 +290,54 @@ test('accepted MCP form writes an encrypted profile without key contents', { ski
   });
   const listed = await client.receive();
   assert.deepEqual(listed.result.structuredContent.profiles, ['production']);
+});
+
+test('embedded editor can save directly in Full Access without elicitation', { skip: process.platform !== 'win32' }, async (t) => {
+  const item = fixture();
+  const client = startServer(item);
+  t.after(() => {
+    client.stop();
+    fs.rmSync(item.root, { recursive: true, force: true });
+  });
+
+  client.send({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2025-06-18',
+      capabilities: {},
+      clientInfo: { name: 'full-access-test', version: '1.0.0' },
+    },
+  });
+  const initialized = await client.receive();
+  assert.deepEqual(initialized.result.capabilities, { tools: {}, resources: {} });
+
+  client.send({
+    jsonrpc: '2.0',
+    id: 2,
+    method: 'tools/call',
+    params: {
+      name: 'save_profile',
+      arguments: {
+        profileName: 'production',
+        host: 'deploy.example.com',
+        port: 22,
+        username: 'deploy',
+        identityFilePath: item.identity,
+        remoteDirectory: '/srv/www/example',
+        deploymentCommand: 'npm ci && npm run build',
+        overwriteExisting: false,
+      },
+    },
+  });
+  const saved = await client.receive();
+  assert.equal(saved.id, 2);
+  assert.equal(saved.result.isError, undefined);
+  assert.equal(saved.result.structuredContent.profileName, 'production');
+
+  const encrypted = fs.readFileSync(saved.result.structuredContent.storeLocation);
+  assert.equal(encrypted.includes(Buffer.from('deploy.example.com')), false);
+  assert.equal(encrypted.includes(Buffer.from(item.identity)), false);
+  assert.equal(encrypted.includes(Buffer.from('PRIVATE-KEY-CONTENT-MUST-NOT-APPEAR')), false);
 });

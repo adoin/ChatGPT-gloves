@@ -2,7 +2,7 @@
 
 `local-ssh-deploy` lets a local Codex agent remember deployment targets securely and publish the current project to a user-specified POSIX server through the machine's own OpenSSH tools. The server is only a deployment target; it is never configured as a remote Codex worker.
 
-Named profiles are created through a native structured form and remain independent of any conversation or project. The deployment workflow packages the current directory (excluding `.git` and `.codex`), uploads the archive with `scp`, extracts it into the requested remote directory, and runs one exact saved command. A hashed dry run and explicit confirmation are required before any network or remote mutation occurs.
+Named profiles are created through the plugin's embedded HTML editor and remain independent of any conversation or project. The editor works in Full Access without MCP elicitation. The deployment workflow packages the current directory (excluding `.git` and `.codex`), uploads the archive with `scp`, extracts it into the requested remote directory, and runs one exact saved command. A hashed dry run and explicit confirmation are required before any network or remote mutation occurs.
 
 ## Install
 
@@ -50,21 +50,19 @@ Ask Codex:
 $ssh-deploy 新增一个名为 production 的部署连接
 ```
 
-Codex calls the bundled `save_profile_with_form` MCP tool and opens a form containing:
+Codex calls the bundled `open_profile_editor` MCP tool and opens an interactive editor containing:
 
-- profile name;
+- profile name at the top;
 - host and port;
 - username;
-- the private key's absolute local path (never key text);
+- the private key's absolute local path, with manual entry and an operating-system file picker (never key text);
 - the non-root POSIX remote directory;
 - the exact single-line deployment command;
 - an explicit checkbox for replacing an existing profile.
 
-The MCP server validates the submitted form and then calls the same secure profile storage layer. Terminal parameters remain available for diagnostics, but they are not the normal setup experience.
+The editor calls `save_profile`, and the MCP server validates the submitted values before calling the same secure profile storage layer. The `pick_identity_file` tool returns only the selected absolute path: it does not read or upload the selected file. Terminal parameters remain available for diagnostics, but they are not the normal setup experience.
 
-If the form tool is unavailable, the skill reports the MCP startup problem and stops. It does not silently downgrade to terminal data entry.
-
-Interactive profile forms require a Codex permission mode that permits MCP elicitations. In desktop versions that auto-decline input forms under Full Access (`approval_policy=Never`), switch the task's permission selector to an approval-enabled mode before asking `$ssh-deploy` to add a connection. A policy decline is reported separately from a form the user actually cancelled.
+If the editor tool is unavailable, the skill reports the MCP startup problem and stops. It does not silently downgrade to terminal data entry. `save_profile_with_form` remains only as a compatibility fallback for hosts that cannot render MCP App resources and do support MCP elicitation.
 
 In a later task, ask “deploy this project using the saved production profile.” Codex lists or loads the profile from the OS credential store, runs `deploy.ps1 -ProfileName production -DryRun`, and shows the complete plan plus its hash. Confirm that rendered plan before Codex reruns it with `-ConfirmDeployment -PlanHash <approved-hash>`.
 

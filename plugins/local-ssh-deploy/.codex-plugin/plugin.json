@@ -1,7 +1,7 @@
 {
   "name": "local-ssh-deploy",
-  "version": "0.1.0+codex.20260914021606",
-  "description": "Persist encrypted SSH deployment profiles and publish local projects through confirmation-gated SSH deployment.",
+  "version": "0.1.0+codex.20260914022703",
+  "description": "Persist encrypted SSH deployment profiles through an embedded editor and publish local projects with confirmation-gated SSH deployment.",
   "author": {
     "name": "adoin",
     "url": "https://github.com/adoin"
@@ -19,19 +19,20 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Local SSH Deploy",
-    "shortDescription": "Save SSH targets with a form and publish local projects.",
-    "longDescription": "Opens a native structured form for named SSH deployment profiles, saves them in the current user's OS credential protection, then packages and uploads the current project with OpenSSH and runs an explicit command only after a hashed dry run and confirmation. Private key contents are never accepted or read.",
+    "shortDescription": "Save SSH targets with an editor and publish local projects.",
+    "longDescription": "Opens an embedded profile editor with a native private-key path picker, saves named SSH deployment profiles in the current user's OS credential protection, then packages and uploads the current project with OpenSSH and runs an explicit command only after a hashed dry run and confirmation. Private key contents are never accepted, read, or uploaded.",
     "developerName": "adoin",
     "category": "Productivity",
     "capabilities": [
       "Dry-run deployment planning",
       "Confirmation-gated SSH upload",
-      "Native deployment profile form",
+      "Embedded deployment profile editor",
+      "Native private-key path picker",
       "Cross-platform secure deployment profiles",
       "Explicit remote deployment commands"
     ],
     "defaultPrompt": [
-      "Open the form to save a secure SSH deployment profile.",
+      "Open the editor to save a secure SSH deployment profile.",
       "Deploy this local site using my saved production profile.",
       "List my saved SSH deployment profiles."
     ],

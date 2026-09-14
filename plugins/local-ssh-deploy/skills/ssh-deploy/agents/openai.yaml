@@ -1,4 +1,4 @@
 interface:
   display_name: "SSH Deploy"
-  short_description: "Save SSH targets with a form and publish local builds."
-  default_prompt: "Use $ssh-deploy to open the form for a new SSH deployment profile."
+  short_description: "Save SSH targets with an editor and publish local builds."
+  default_prompt: "Use $ssh-deploy to open the editor for a new SSH deployment profile."

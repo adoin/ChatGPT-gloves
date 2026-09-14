@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SSH 部署档案</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #ffffff;
+      --surface: #f7f8fa;
+      --text: #171717;
+      --muted: #686868;
+      --border: #dedede;
+      --focus: #2563eb;
+      --accent: #171717;
+      --accent-text: #ffffff;
+      --danger: #c2410c;
+      --success: #15803d;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #171717;
+        --surface: #222222;
+        --text: #f4f4f4;
+        --muted: #aaaaaa;
+        --border: #3b3b3b;
+        --focus: #60a5fa;
+        --accent: #f4f4f4;
+        --accent-text: #171717;
+        --danger: #fb923c;
+        --success: #4ade80;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    main {
+      width: min(100%, 760px);
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    header { margin-bottom: 22px; }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 20px;
+      line-height: 1.3;
+      letter-spacing: -0.01em;
+    }
+
+    .lead, .hint {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    form {
+      display: grid;
+      gap: 18px;
+    }
+
+    .field {
+      display: grid;
+      gap: 7px;
+    }
+
+    label, legend {
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    input, textarea, button {
+      font: inherit;
+    }
+
+    input[type="text"], input[type="number"], textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg);
+      color: var(--text);
+      padding: 11px 12px;
+      line-height: 1.4;
+      outline: none;
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    textarea {
+      min-height: 82px;
+      resize: vertical;
+    }
+
+    input:focus, textarea:focus, button:focus-visible {
+      border-color: var(--focus);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 18%, transparent);
+    }
+
+    .path-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: stretch;
+    }
+
+    button {
+      min-height: 42px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 9px 15px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-weight: 650;
+    }
+
+    button:hover:not(:disabled) { filter: brightness(0.97); }
+    button:disabled { cursor: wait; opacity: 0.62; }
+
+    .checkbox {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+    }
+
+    .checkbox input {
+      width: 17px;
+      height: 17px;
+      margin: 2px 0 0;
+      accent-color: var(--focus);
+    }
+
+    .actions {
+      position: sticky;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin: 2px -8px -8px;
+      padding: 14px 8px 8px;
+      background: color-mix(in srgb, var(--bg) 94%, transparent);
+      backdrop-filter: blur(8px);
+    }
+
+    .primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: var(--accent-text);
+      white-space: nowrap;
+    }
+
+    #status {
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    #status.error { color: var(--danger); }
+    #status.success { color: var(--success); }
+
+    @media (max-width: 560px) {
+      main { padding: 18px 14px; }
+      .path-row { grid-template-columns: 1fr; }
+      .actions { align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>SSH 部署档案</h1>
+      <p class="lead">连接信息将保存到当前用户的系统安全存储。私钥只记录本机路径，不读取、不上传文件内容。</p>
+    </header>
+
+    <form id="profile-form">
+      <div class="field">
+        <label for="profileName">档案名称</label>
+        <input id="profileName" name="profileName" type="text" required maxlength="64" pattern="[A-Za-z][A-Za-z0-9._-]{0,63}" autocomplete="off" placeholder="production">
+        <p class="hint">以后可用这个名字唤起；以字母开头，可包含字母、数字、点、下划线和连字符。</p>
+      </div>
+
+      <div class="field">
+        <label for="host">服务器地址</label>
+        <input id="host" name="host" type="text" required maxlength="253" autocomplete="off" placeholder="example.com">
+        <p class="hint">填写 DNS 名称、IPv4 或 IPv6，不要包含用户名或端口。</p>
+      </div>
+
+      <div class="field">
+        <label for="port">SSH 端口</label>
+        <input id="port" name="port" type="number" required min="1" max="65535" value="22" inputmode="numeric">
+      </div>
+
+      <div class="field">
+        <label for="username">SSH 用户名</label>
+        <input id="username" name="username" type="text" required maxlength="64" autocomplete="username" placeholder="deploy">
+      </div>
+
+      <div class="field">
+        <label for="identityFilePath">本机私钥绝对路径</label>
+        <div class="path-row">
+          <input id="identityFilePath" name="identityFilePath" type="text" required maxlength="1024" autocomplete="off" placeholder="C:\Users\name\.ssh\id_ed25519">
+          <button id="pick-file" type="button">选择文件…</button>
+        </div>
+        <p class="hint">可以手动填写或用系统文件选择器选取。私钥必须位于待部署项目之外。</p>
+      </div>
+
+      <div class="field">
+        <label for="remoteDirectory">远程目录</label>
+        <input id="remoteDirectory" name="remoteDirectory" type="text" required maxlength="1024" autocomplete="off" placeholder="/srv/www/example">
+        <p class="hint">填写非根 POSIX 绝对路径。</p>
+      </div>
+
+      <div class="field">
+        <label for="deploymentCommand">部署命令</label>
+        <textarea id="deploymentCommand" name="deploymentCommand" required maxlength="4096" placeholder="npm ci &amp;&amp; npm run build"></textarea>
+        <p class="hint">项目上传并解压后，在远程目录中运行的准确单行命令。</p>
+      </div>
+
+      <label class="checkbox" for="overwriteExisting">
+        <input id="overwriteExisting" name="overwriteExisting" type="checkbox">
+        <span>覆盖同名档案<br><span class="hint">只有明确希望替换已有档案时才勾选。</span></span>
+      </label>
+
+      <div class="actions">
+        <div id="status" role="status" aria-live="polite"></div>
+        <button id="save" class="primary" type="submit">保存档案</button>
+      </div>
+    </form>
+  </main>
+
+  <script>
+    (() => {
+      const form = document.getElementById('profile-form');
+      const saveButton = document.getElementById('save');
+      const pickButton = document.getElementById('pick-file');
+      const pathInput = document.getElementById('identityFilePath');
+      const status = document.getElementById('status');
+      const pending = new Map();
+      let nextRequestId = 1;
+
+      function setStatus(message, kind = '') {
+        status.textContent = message;
+        status.className = kind;
+      }
+
+      function applyToolInput(input) {
+        const suggestedName = input && input.suggestedProfileName;
+        const nameInput = document.getElementById('profileName');
+        if (typeof suggestedName === 'string' && suggestedName && !nameInput.value) {
+          nameInput.value = suggestedName;
+        }
+      }
+
+      function unwrapToolResult(value) {
+        return value && value.result ? value.result : value;
+      }
+
+      function callViaBridge(name, args) {
+        const id = nextRequestId++;
+        const request = { jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } };
+        return new Promise((resolve, reject) => {
+          pending.set(id, { resolve, reject });
+          window.parent.postMessage(request, '*');
+        });
+      }
+
+      async function callTool(name, args) {
+        if (window.openai && typeof window.openai.callTool === 'function') {
+          return window.openai.callTool(name, args);
+        }
+        return callViaBridge(name, args);
+      }
+
+      window.addEventListener('message', (event) => {
+        const message = event.data;
+        if (!message || message.jsonrpc !== '2.0') return;
+
+        if (Object.prototype.hasOwnProperty.call(message, 'id') && pending.has(message.id)) {
+          const request = pending.get(message.id);
+          pending.delete(message.id);
+          if (message.error) request.reject(new Error(message.error.message || 'Tool call failed.'));
+          else request.resolve(message.result);
+          return;
+        }
+
+        if (message.method === 'ui/notifications/tool-input') {
+          applyToolInput(message.params?.arguments || message.params);
+        }
+      });
+
+      applyToolInput(window.openai?.toolInput);
+
+      pickButton.addEventListener('click', async () => {
+        pickButton.disabled = true;
+        setStatus('正在打开系统文件选择器…');
+        try {
+          const raw = await callTool('pick_identity_file', {});
+          const result = unwrapToolResult(raw);
+          if (result?.isError) throw new Error(result.content?.[0]?.text || '无法打开文件选择器。');
+          const selected = result?.structuredContent;
+          if (selected?.status === 'selected' && selected.path) {
+            pathInput.value = selected.path;
+            pathInput.focus();
+            setStatus('已选择私钥路径。文件内容未被读取。', 'success');
+          } else {
+            setStatus('已取消选择。');
+          }
+        } catch (error) {
+          setStatus(error.message || '无法选择文件，请手动填写绝对路径。', 'error');
+        } finally {
+          pickButton.disabled = false;
+        }
+      });
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!form.reportValidity()) return;
+
+        saveButton.disabled = true;
+        setStatus('正在验证并安全保存…');
+        const values = new FormData(form);
+        const payload = {
+          profileName: String(values.get('profileName') || '').trim(),
+          host: String(values.get('host') || '').trim(),
+          port: Number(values.get('port')),
+          username: String(values.get('username') || '').trim(),
+          identityFilePath: String(values.get('identityFilePath') || '').trim(),
+          remoteDirectory: String(values.get('remoteDirectory') || '').trim(),
+          deploymentCommand: String(values.get('deploymentCommand') || '').trim(),
+          overwriteExisting: values.get('overwriteExisting') === 'on',
+        };
+
+        try {
+          const raw = await callTool('save_profile', payload);
+          const result = unwrapToolResult(raw);
+          if (result?.isError) throw new Error(result.content?.[0]?.text || '保存失败。');
+          const savedName = result?.structuredContent?.profileName || payload.profileName;
+          setStatus(`档案 ${savedName} 已安全保存。`, 'success');
+        } catch (error) {
+          setStatus(error.message || '保存失败，请检查填写内容。', 'error');
+        } finally {
+          saveButton.disabled = false;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

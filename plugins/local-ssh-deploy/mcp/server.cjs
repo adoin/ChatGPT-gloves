@@ -2,12 +2,17 @@
 'use strict';
 
 const path = require('node:path');
+const fs = require('node:fs');
 const readline = require('node:readline');
 const { spawnSync } = require('node:child_process');
 
 const SERVER_NAME = 'local-ssh-deploy';
 const SERVER_VERSION = '0.1.0';
 const profilesScript = path.resolve(__dirname, '../scripts/profiles.ps1');
+const pickerScript = path.resolve(__dirname, '../scripts/pick-identity-file.ps1');
+const profileEditorPath = path.resolve(__dirname, 'profile-editor.html');
+const PROFILE_EDITOR_URI = 'ui://local-ssh-deploy/profile-editor.html';
+const PROFILE_EDITOR_MIME_TYPE = 'text/html;profile=mcp-app';
 
 let clientCapabilities = {};
 let nextServerRequestId = 1;
@@ -84,6 +89,91 @@ const profileFormSchema = {
 };
 
 const tools = [
+  {
+    name: 'open_profile_editor',
+    title: '打开 SSH 部署档案编辑器',
+    description: 'Open the bundled interactive SSH deployment profile editor. This works without MCP elicitation and never reads private key contents.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        suggestedProfileName: {
+          type: 'string',
+          description: 'Optional profile name to prefill in the editor.',
+          minLength: 1,
+          maxLength: 64,
+        },
+      },
+      additionalProperties: false,
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        suggestedProfileName: { type: 'string' },
+      },
+      required: ['suggestedProfileName'],
+      additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    _meta: {
+      ui: { resourceUri: PROFILE_EDITOR_URI },
+      'openai/outputTemplate': PROFILE_EDITOR_URI,
+    },
+  },
+  {
+    name: 'save_profile',
+    title: '保存 SSH 部署档案',
+    description: 'Validate and securely save fields submitted by the bundled profile editor. Accepts an absolute private-key path only, never private key contents.',
+    inputSchema: {
+      ...profileFormSchema,
+      additionalProperties: false,
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        profileName: { type: 'string' },
+        storeBackend: { type: 'string' },
+        storeLocation: { type: 'string' },
+      },
+      required: ['profileName', 'storeBackend', 'storeLocation'],
+      additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: 'pick_identity_file',
+    title: '选择本机 SSH 私钥文件',
+    description: 'Open the operating system file picker and return only the selected absolute path. The file contents are never read or uploaded.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['selected', 'cancelled'] },
+        path: { type: 'string' },
+      },
+      required: ['status', 'path'],
+      additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
   {
     name: 'save_profile_with_form',
     title: '打开 SSH 部署档案表单',
@@ -239,7 +329,7 @@ function assertFormContent(content) {
   }
 }
 
-async function saveProfileWithForm(argumentsValue) {
+function validateSuggestedName(argumentsValue) {
   if (!argumentsValue || typeof argumentsValue !== 'object' || Array.isArray(argumentsValue)) {
     throw new Error('Tool arguments must be an object.');
   }
@@ -253,6 +343,114 @@ async function saveProfileWithForm(argumentsValue) {
         || !/^[A-Za-z][A-Za-z0-9._-]{0,63}$/.test(argumentsValue.suggestedProfileName))) {
     throw new Error('suggestedProfileName must be a valid profile name.');
   }
+}
+
+function openProfileEditor(argumentsValue) {
+  validateSuggestedName(argumentsValue);
+  const suggestedProfileName = argumentsValue.suggestedProfileName || '';
+  return {
+    content: [{
+      type: 'text',
+      text: 'SSH deployment profile editor opened. Complete the embedded form and choose Save profile.',
+    }],
+    structuredContent: { suggestedProfileName },
+    _meta: {
+      ui: { resourceUri: PROFILE_EDITOR_URI },
+      'openai/outputTemplate': PROFILE_EDITOR_URI,
+    },
+  };
+}
+
+function saveProfile(content) {
+  assertFormContent(content);
+  const args = [
+    '-Save',
+    '-ProfileName', content.profileName,
+    '-HostName', content.host,
+    '-Port', String(content.port),
+    '-Username', content.username,
+    '-IdentityFilePath', content.identityFilePath,
+    '-RemoteDirectory', content.remoteDirectory,
+    '-DeploymentCommand', content.deploymentCommand,
+  ];
+  if (content.overwriteExisting) {
+    args.push('-ConfirmOverwrite');
+  }
+
+  const saved = runProfilesScript(args);
+  return {
+    content: [{
+      type: 'text',
+      text: `Saved SSH deployment profile "${saved.profileName}" in ${saved.storeBackend}.`,
+    }],
+    structuredContent: {
+      profileName: saved.profileName,
+      storeBackend: saved.storeBackend,
+      storeLocation: saved.storeLocation,
+    },
+  };
+}
+
+function runPathPicker() {
+  let command;
+  let args;
+  if (process.platform === 'win32') {
+    command = powershellCommand();
+    args = ['-NoLogo', '-NoProfile', '-STA', '-File', pickerScript];
+  } else if (process.platform === 'darwin') {
+    command = 'osascript';
+    args = ['-e', 'POSIX path of (choose file with prompt "Choose an SSH private key file")'];
+  } else {
+    const zenity = spawnSync('sh', ['-c', 'command -v zenity'], { encoding: 'utf8' });
+    if (zenity.status === 0) {
+      command = 'zenity';
+      args = ['--file-selection', '--title=Choose an SSH private key file'];
+    } else {
+      const kdialog = spawnSync('sh', ['-c', 'command -v kdialog'], { encoding: 'utf8' });
+      if (kdialog.status !== 0) {
+        throw new Error('No supported graphical file picker was found. Install zenity or kdialog, or enter the absolute path manually.');
+      }
+      command = 'kdialog';
+      args = ['--getopenfilename', '', 'All files (*)'];
+    }
+  }
+
+  const result = spawnSync(command, args, {
+    encoding: 'utf8',
+    windowsHide: false,
+    timeout: 5 * 60_000,
+    maxBuffer: 64 * 1024,
+  });
+  if (result.error) {
+    throw new Error(`File picker failed to start: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    return { status: 'cancelled', path: '' };
+  }
+  if (process.platform === 'win32') {
+    return JSON.parse(result.stdout);
+  }
+  const selectedPath = result.stdout.trim();
+  return selectedPath
+    ? { status: 'selected', path: path.resolve(selectedPath) }
+    : { status: 'cancelled', path: '' };
+}
+
+function pickIdentityFile() {
+  const selected = runPathPicker();
+  return {
+    content: [{
+      type: 'text',
+      text: selected.status === 'selected'
+        ? 'Selected a local SSH private key path. The file contents were not read.'
+        : 'File selection was cancelled.',
+    }],
+    structuredContent: selected,
+  };
+}
+
+async function saveProfileWithForm(argumentsValue) {
+  validateSuggestedName(argumentsValue);
   if (!clientCapabilities?.elicitation?.form) {
     return {
       content: [{
@@ -293,34 +491,7 @@ async function saveProfileWithForm(argumentsValue) {
     throw new Error(`Unsupported profile form response action: ${response.action}.`);
   }
 
-  assertFormContent(response.content);
-  const content = response.content;
-  const args = [
-    '-Save',
-    '-ProfileName', content.profileName,
-    '-HostName', content.host,
-    '-Port', String(content.port),
-    '-Username', content.username,
-    '-IdentityFilePath', content.identityFilePath,
-    '-RemoteDirectory', content.remoteDirectory,
-    '-DeploymentCommand', content.deploymentCommand,
-  ];
-  if (content.overwriteExisting) {
-    args.push('-ConfirmOverwrite');
-  }
-
-  const saved = runProfilesScript(args);
-  return {
-    content: [{
-      type: 'text',
-      text: `Saved SSH deployment profile "${saved.profileName}" in ${saved.storeBackend}.`,
-    }],
-    structuredContent: {
-      profileName: saved.profileName,
-      storeBackend: saved.storeBackend,
-      storeLocation: saved.storeLocation,
-    },
-  };
+  return saveProfile(response.content);
 }
 
 function listProfiles() {
@@ -345,6 +516,12 @@ async function callTool(params) {
     throw new Error('Tool name is required.');
   }
   switch (params.name) {
+    case 'open_profile_editor':
+      return openProfileEditor(params.arguments || {});
+    case 'save_profile':
+      return saveProfile(params.arguments || {});
+    case 'pick_identity_file':
+      return pickIdentityFile();
     case 'save_profile_with_form':
       return saveProfileWithForm(params.arguments || {});
     case 'list_profiles':
@@ -360,13 +537,13 @@ async function handleRequest(message) {
       clientCapabilities = message.params?.capabilities || {};
       sendResult(message.id, {
         protocolVersion: message.params?.protocolVersion || '2025-06-18',
-        capabilities: { tools: {} },
+        capabilities: { tools: {}, resources: {} },
         serverInfo: {
           name: SERVER_NAME,
           title: 'Local SSH Deploy',
           version: SERVER_VERSION,
         },
-        instructions: 'Use save_profile_with_form for new or replacement profiles so the user receives a native structured form. Never request private key contents.',
+        instructions: 'Use open_profile_editor for new or replacement profiles so the user receives the bundled interactive editor. Use save_profile_with_form only as a compatibility fallback. Never request private key contents.',
       });
       return;
     case 'ping':
@@ -374,6 +551,31 @@ async function handleRequest(message) {
       return;
     case 'tools/list':
       sendResult(message.id, { tools });
+      return;
+    case 'resources/list':
+      sendResult(message.id, {
+        resources: [{
+          uri: PROFILE_EDITOR_URI,
+          name: 'SSH deployment profile editor',
+          title: 'SSH 部署档案',
+          description: 'Interactive editor for a securely stored SSH deployment profile.',
+          mimeType: PROFILE_EDITOR_MIME_TYPE,
+        }],
+      });
+      return;
+    case 'resources/read':
+      if (message.params?.uri !== PROFILE_EDITOR_URI) {
+        sendError(message.id, -32602, `Unknown resource URI: ${message.params?.uri}`);
+        return;
+      }
+      sendResult(message.id, {
+        contents: [{
+          uri: PROFILE_EDITOR_URI,
+          mimeType: PROFILE_EDITOR_MIME_TYPE,
+          text: fs.readFileSync(profileEditorPath, 'utf8'),
+          _meta: { ui: { prefersBorder: true } },
+        }],
+      });
       return;
     case 'tools/call':
       try {
