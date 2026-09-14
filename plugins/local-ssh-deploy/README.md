@@ -62,6 +62,8 @@ Codex calls the bundled `save_profile_with_form` MCP tool and opens a form conta
 
 The MCP server validates the submitted form and then calls the same secure profile storage layer. Terminal parameters remain available for diagnostics, but they are not the normal setup experience.
 
+If the form tool is unavailable, the skill reports the MCP startup problem and stops. It does not silently downgrade to terminal data entry.
+
 In a later task, ask “deploy this project using the saved production profile.” Codex lists or loads the profile from the OS credential store, runs `deploy.ps1 -ProfileName production -DryRun`, and shows the complete plan plus its hash. Confirm that rendered plan before Codex reruns it with `-ConfirmDeployment -PlanHash <approved-hash>`.
 
 Ask `$ssh-deploy 列出部署档案` to list profiles. Deleting a profile still requires explicit confirmation. Overwriting requires selecting the form's overwrite checkbox.

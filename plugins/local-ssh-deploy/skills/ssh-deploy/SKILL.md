@@ -33,7 +33,7 @@ For ordinary profile creation, the user only needs to say something like:
 新增一个名为 production 的部署连接
 ```
 
-The tool must open the native form. Use `scripts/profiles.ps1` directly only when the user explicitly requests a terminal workflow or when diagnosing an unavailable MCP form. Deployment still uses PowerShell 7 with separate parameters:
+The tool must open the native form. If the form tool is unavailable, stop and report that the bundled MCP server did not load; do not silently downgrade to terminal data entry. Use `scripts/profiles.ps1` directly only when the user explicitly requests a terminal workflow after being told the form is unavailable. Deployment still uses PowerShell 7 with separate parameters:
 
 ```powershell
 pwsh -NoLogo -NoProfile -File <plugin-root>/scripts/deploy.ps1 `

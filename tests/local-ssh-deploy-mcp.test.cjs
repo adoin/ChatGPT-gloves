@@ -6,8 +6,11 @@ const os = require('node:os');
 const path = require('node:path');
 const readline = require('node:readline');
 const { spawn } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 const test = require('node:test');
 
+const pluginRoot = path.resolve(__dirname, '../plugins/local-ssh-deploy');
+const mcpConfigPath = path.join(pluginRoot, '.mcp.json');
 const serverPath = path.resolve(__dirname, '../plugins/local-ssh-deploy/mcp/server.cjs');
 
 function fixture() {
@@ -74,6 +77,36 @@ async function initialize(client) {
   assert.equal(response.result.serverInfo.name, 'local-ssh-deploy');
   client.send({ jsonrpc: '2.0', method: 'notifications/initialized' });
 }
+
+test('bundled MCP config launches the server from the plugin root', () => {
+  const config = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf8')).mcpServers['local-ssh-deploy'];
+  assert.deepEqual(config, {
+    command: 'node',
+    args: ['mcp/server.cjs'],
+    cwd: '.',
+  });
+
+  const result = spawnSync(config.command, config.args, {
+    cwd: pluginRoot,
+    input: `${JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'manifest-launch-test', version: '1.0.0' },
+      },
+    })}\n`,
+    encoding: 'utf8',
+    timeout: 10_000,
+    windowsHide: true,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const response = JSON.parse(result.stdout.trim());
+  assert.equal(response.id, 1);
+  assert.equal(response.result.serverInfo.name, 'local-ssh-deploy');
+});
 
 test('MCP server advertises a native profile form and handles cancellation', async (t) => {
   const item = fixture();

@@ -3,8 +3,9 @@
     "local-ssh-deploy": {
       "command": "node",
       "args": [
-        "${PLUGIN_ROOT}/mcp/server.cjs"
-      ]
+        "mcp/server.cjs"
+      ],
+      "cwd": "."
     }
   }
 }
