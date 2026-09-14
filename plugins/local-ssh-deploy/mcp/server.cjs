@@ -61,8 +61,11 @@ function assertNoControlCharacters(name, value) {
 }
 
 function assertConnectionName(connectionName) {
-  if (typeof connectionName !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,63}$/.test(connectionName)) {
-    throw new Error('connectionName must start with a letter and contain only letters, digits, dot, underscore, or hyphen.');
+  const characterCount = typeof connectionName === 'string' ? Array.from(connectionName).length : 0;
+  const validCharacters = typeof connectionName === 'string'
+    && /^[\p{L}\p{N}](?:[\p{L}\p{M}\p{N} ._-]*[\p{L}\p{M}\p{N}])?$/u.test(connectionName);
+  if (characterCount < 1 || characterCount > 64 || !validCharacters) {
+    throw new Error('连接名称须为 1–64 个字符，支持中文、其他语言文字、数字、空格、点、下划线和连字符；不能以空格或标点开头或结尾。');
   }
 }
 
@@ -212,7 +215,7 @@ const connectionSchema = {
     connectionName: {
       type: 'string',
       title: '连接名称',
-      description: '用于以后唤起，例如 production。以字母开头，可包含字母、数字、点、下划线和连字符。',
+      description: '用于以后唤起，例如“生产服务器”。支持中文、其他语言文字、数字、空格、点、下划线和连字符。',
       minLength: 1,
       maxLength: 64,
     },

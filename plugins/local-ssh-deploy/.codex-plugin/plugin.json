@@ -1,6 +1,6 @@
 {
   "name": "local-ssh-deploy",
-  "version": "0.1.0+codex.20260914034237",
+  "version": "0.1.0+codex.20260914035004",
   "description": "Save and recall reusable SSH server connection metadata so Codex can use the current system's native remote tools.",
   "author": {
     "name": "adoin",

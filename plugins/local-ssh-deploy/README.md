@@ -28,6 +28,8 @@ Each named connection contains only:
 
 Private key contents, passwords, commands, remote directories, and deployment settings are never stored. The private key itself remains in the user's SSH directory and is never read or uploaded by the plugin.
 
+Connection names support Chinese and other Unicode letters, numbers, spaces, dots, underscores, and hyphens. Leading or trailing spaces and punctuation are rejected.
+
 ## Durable storage
 
 The MCP server is implemented in Node.js and writes `connections.json` to a per-user application configuration directory:
@@ -56,15 +58,15 @@ On Windows, the file picker uses the built-in Windows PowerShell/WinForms dialog
 Add a connection:
 
 ```text
-添加一个名为 production 的远程服务器连接
+添加一个名为“生产服务器”的远程服务器连接
 ```
 
 Use it later:
 
 ```text
-用 production 查看磁盘空间
-用 production 查看 nginx 最近的错误日志
-把 build.zip 上传到 production 的 /srv/app
+用“生产服务器”查看磁盘空间
+用“生产服务器”查看 nginx 最近的错误日志
+把 build.zip 上传到“生产服务器”的 /srv/app
 ```
 
 Codex calls `get_connection`, checks the returned platform, and builds the native command itself. Host-key verification must remain enabled. Read-only inspections can follow a clear request; remote mutations and file transfers require confirmation of the exact target and action.

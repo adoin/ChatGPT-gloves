@@ -33,13 +33,13 @@ This plugin is an SSH connection address book. It stores connection metadata and
 Ordinary setup requires only:
 
 ```text
-添加一个名为 production 的远程服务器连接
+添加一个名为“生产服务器”的远程服务器连接
 ```
 
 Later tasks can be phrased naturally:
 
 ```text
-用 production 查看磁盘空间
-用 production 查看 nginx 最近的错误日志
-把这个构建产物上传到 production 的 /srv/app
+用“生产服务器”查看磁盘空间
+用“生产服务器”查看 nginx 最近的错误日志
+把这个构建产物上传到“生产服务器”的 /srv/app
 ```

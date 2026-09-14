@@ -137,10 +137,10 @@ test('server exposes connection-address-book tools and the bundled editor', asyn
   const editorTool = listed.result.tools[0];
   assert.equal(editorTool._meta.ui.resourceUri, editorUri);
 
-  const opened = await call(client, 3, 'add_remote_server_connection', { suggestedConnectionName: 'production' });
-  assert.equal(opened.structuredContent.suggestedConnectionName, 'production');
+  const opened = await call(client, 3, 'add_remote_server_connection', { suggestedConnectionName: '生产服务器' });
+  assert.equal(opened.structuredContent.suggestedConnectionName, '生产服务器');
   assert.equal(opened.structuredContent.browserOpened, false);
-  assert.match(opened.structuredContent.editorUrl, /suggestedConnectionName=production$/);
+  assert.equal(new URL(opened.structuredContent.editorUrl).searchParams.get('suggestedConnectionName'), '生产服务器');
 
   const response = await fetch(opened.structuredContent.editorUrl);
   assert.equal(response.status, 200);
@@ -162,7 +162,7 @@ test('save, list, get, overwrite, and delete operate on one durable user store',
   await initialize(client);
 
   const values = {
-    connectionName: 'production',
+    connectionName: '生产服务器',
     host: 'server.example.com',
     port: 2222,
     username: 'deploy',
@@ -176,19 +176,19 @@ test('save, list, get, overwrite, and delete operate on one durable user store',
 
   const storedText = fs.readFileSync(saved.structuredContent.storeLocation, 'utf8');
   const stored = JSON.parse(storedText);
-  assert.deepEqual(Object.keys(stored.connections.production), ['host', 'port', 'username', 'identityFilePath']);
-  assert.equal(stored.connections.production.host, 'server.example.com');
+  assert.deepEqual(Object.keys(stored.connections['生产服务器']), ['host', 'port', 'username', 'identityFilePath']);
+  assert.equal(stored.connections['生产服务器'].host, 'server.example.com');
   assert.doesNotMatch(storedText, /PRIVATE-KEY-CONTENT-MUST-NOT-APPEAR/);
   const acl = spawnSync('icacls.exe', [saved.structuredContent.storeLocation], { encoding: 'utf8' });
   assert.equal(acl.status, 0, acl.stderr);
   assert.doesNotMatch(acl.stdout, /\(I\)/);
 
   const listed = await call(client, 3, 'list_connections');
-  assert.deepEqual(listed.structuredContent.connections, ['production']);
+  assert.deepEqual(listed.structuredContent.connections, ['生产服务器']);
 
-  const loaded = await call(client, 4, 'get_connection', { connectionName: 'production' });
+  const loaded = await call(client, 4, 'get_connection', { connectionName: '生产服务器' });
   assert.deepEqual(loaded.structuredContent, {
-    connectionName: 'production',
+    connectionName: '生产服务器',
     host: 'server.example.com',
     port: 2222,
     username: 'deploy',
@@ -208,12 +208,12 @@ test('save, list, get, overwrite, and delete operate on one durable user store',
     overwriteExisting: true,
   });
   assert.equal(overwritten.isError, undefined);
-  const reloaded = await call(client, 7, 'get_connection', { connectionName: 'production' });
+  const reloaded = await call(client, 7, 'get_connection', { connectionName: '生产服务器' });
   assert.equal(reloaded.structuredContent.host, 'replacement.example.com');
 
-  const refused = await call(client, 8, 'delete_connection', { connectionName: 'production', confirmDelete: false });
+  const refused = await call(client, 8, 'delete_connection', { connectionName: '生产服务器', confirmDelete: false });
   assert.equal(refused.isError, true);
-  const deleted = await call(client, 9, 'delete_connection', { connectionName: 'production', confirmDelete: true });
+  const deleted = await call(client, 9, 'delete_connection', { connectionName: '生产服务器', confirmDelete: true });
   assert.equal(deleted.structuredContent.deleted, true);
   const empty = await call(client, 10, 'list_connections');
   assert.deepEqual(empty.structuredContent.connections, []);
