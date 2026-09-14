@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "local-ssh-deploy": {
+      "command": "node",
+      "args": [
+        "${PLUGIN_ROOT}/mcp/server.cjs"
+      ]
+    }
+  }
+}

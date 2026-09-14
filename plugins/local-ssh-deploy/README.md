@@ -2,7 +2,7 @@
 
 `local-ssh-deploy` lets a local Codex agent remember deployment targets securely and publish the current project to a user-specified POSIX server through the machine's own OpenSSH tools. The server is only a deployment target; it is never configured as a remote Codex worker.
 
-Named profiles are user-level and independent of any conversation or project. The deployment workflow packages the current directory (excluding `.git` and `.codex`), uploads the archive with `scp`, extracts it into the requested remote directory, and runs one exact saved command. A hashed dry run and explicit confirmation are required before any network or remote mutation occurs.
+Named profiles are created through a native structured form and remain independent of any conversation or project. The deployment workflow packages the current directory (excluding `.git` and `.codex`), uploads the archive with `scp`, extracts it into the requested remote directory, and runs one exact saved command. A hashed dry run and explicit confirmation are required before any network or remote mutation occurs.
 
 ## Install
 
@@ -25,7 +25,7 @@ Start a new Codex task after installation so the `ssh-deploy` skill is discovere
 
 ## Prerequisites
 
-- PowerShell 7 (`pwsh`) and the local OpenSSH `ssh`, `scp`, and `tar` executables on `PATH`.
+- Node.js, PowerShell 7 (`pwsh`), and the local OpenSSH `ssh`, `scp`, and `tar` executables on `PATH`.
 - A key-based SSH login. Encrypted keys must already be available through the local SSH agent because batch mode disables password and passphrase prompts.
 - The destination host already recorded in the local OpenSSH `known_hosts` file. Host-key checking is strict.
 - A POSIX destination with `sh` and `tar`.
@@ -44,25 +44,26 @@ There is no plaintext fallback. These locations survive task closure, project de
 
 ## Use
 
-Ask Codex to save a deployment profile and provide:
-
-- a profile name used only to look up these values;
-- host and port;
-- username;
-- the private key's absolute local path (never the key text);
-- a non-root absolute POSIX remote directory containing only letters, digits, `.`, `_`, `-`, and `/`;
-- the exact single-line command to execute after extraction.
-
-For example:
+Ask Codex:
 
 ```text
-Save a profile named production for example.com:22 as deploy, using
-C:\Users\me\.ssh\deploy_ed25519, into /srv/www/example, then run exactly:
-npm ci && npm run build && systemctl --user restart example
+$ssh-deploy 新增一个名为 production 的部署连接
 ```
+
+Codex calls the bundled `save_profile_with_form` MCP tool and opens a form containing:
+
+- profile name;
+- host and port;
+- username;
+- the private key's absolute local path (never key text);
+- the non-root POSIX remote directory;
+- the exact single-line deployment command;
+- an explicit checkbox for replacing an existing profile.
+
+The MCP server validates the submitted form and then calls the same secure profile storage layer. Terminal parameters remain available for diagnostics, but they are not the normal setup experience.
 
 In a later task, ask “deploy this project using the saved production profile.” Codex lists or loads the profile from the OS credential store, runs `deploy.ps1 -ProfileName production -DryRun`, and shows the complete plan plus its hash. Confirm that rendered plan before Codex reruns it with `-ConfirmDeployment -PlanHash <approved-hash>`.
 
-Manage profiles directly with `profiles.ps1 -List`, `-Show`, `-Save`, or `-Delete`. Overwriting and deleting existing profiles require explicit confirmation flags.
+Ask `$ssh-deploy 列出部署档案` to list profiles. Deleting a profile still requires explicit confirmation. Overwriting requires selecting the form's overwrite checkbox.
 
 To keep the destination determined only by the displayed plan, the script ignores local SSH config files; the host must therefore be directly reachable with the supplied values. Extraction overlays the remote directory and does not delete stale remote files. If atomic releases or stale-file cleanup are required, encode that behavior in the exact deployment command and review it during the dry run.

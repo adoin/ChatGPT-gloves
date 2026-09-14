@@ -25,7 +25,9 @@ function verify() {
     {
       name: "local-ssh-deploy",
       files: [
+        ".mcp.json",
         "README.md",
+        "mcp/server.cjs",
         "scripts/LocalSshDeploy.psm1",
         "scripts/deploy.ps1",
         "scripts/profiles.ps1",

@@ -5,7 +5,7 @@ description: Save user-level SSH deployment profiles securely and publish the cu
 
 # SSH Deploy
 
-Use `scripts/profiles.ps1` to manage named user-level deployment profiles and `scripts/deploy.ps1` from the project directory the user wants to publish. Profiles survive conversations, project deletion, and plugin updates. The deployment script packages the current working directory, excluding `.git` and `.codex`, uploads it with the local `scp` executable, extracts it remotely, and then runs the profile's explicit deployment command.
+Use the bundled `save_profile_with_form` MCP tool to collect and save named deployment profiles through the client's native form. Use `list_profiles` to discover saved names, and `scripts/deploy.ps1` from the project directory the user wants to publish. Profiles survive conversations, project deletion, and plugin updates. The deployment script packages the current working directory, excluding `.git` and `.codex`, uploads it with the local `scp` executable, extracts it remotely, and then runs the profile's explicit deployment command.
 
 ## Safety boundary
 
@@ -18,26 +18,22 @@ Use `scripts/profiles.ps1` to manage named user-level deployment profiles and `s
 
 ## Workflow
 
-1. When the user refers to an existing server or asks what is remembered, run `profiles.ps1 -List`, then `-Show -ProfileName <name>` when the values are needed. Do not search projects or conversation history for connection data.
-2. For a new connection, collect the six allowed fields and a profile name. The remote directory must be a non-root absolute POSIX path using only letters, digits, `.`, `_`, `-`, and `/`. Verify only the private key path and file metadata, never its bytes, then save with `profiles.ps1 -Save`.
-3. Replacing an existing profile requires explicit confirmation and `-ConfirmOverwrite`. Deleting one requires explicit confirmation and `-ConfirmDelete`.
-4. Establish that the current working directory is the intended project. Run `deploy.ps1 -ProfileName <name> -DryRun` and show the returned plan and `planHash`.
-5. Ask for explicit confirmation of that exact plan. A general request to deploy before the dry run is not confirmation of the rendered plan. If any value, profile, or project directory changes, run a new dry run and confirm again.
-6. Only after confirmation, rerun with `-ProfileName <name> -ConfirmDeployment -PlanHash <approved-hash>`. The script rejects a changed plan. Do not add confirmation based on inference or prior blanket permission.
-7. Report the local packaging, upload, extraction, and remote-command result. On failure, stop; do not silently retry a mutation or substitute another command.
+1. When the user refers to an existing server or asks what is remembered, call `list_profiles`. Do not search projects or conversation history for connection data.
+2. When the user asks to add, configure, save, or replace a connection, call `save_profile_with_form` immediately. Pass a suggested profile name only when the user already supplied one. Do not ask the user to paste a field template into chat.
+3. The form collects the profile name and six allowed fields. Its private-key field accepts only an absolute local path, never key contents. The remote directory must be a non-root absolute POSIX path using only letters, digits, `.`, `_`, `-`, and `/`. The MCP server and storage script validate the submitted values again before saving.
+4. Replacing an existing profile requires the user to select the form's explicit overwrite control. Deleting one still requires explicit confirmation and `profiles.ps1 -Delete -ConfirmDelete`.
+5. Establish that the current working directory is the intended project. Run `deploy.ps1 -ProfileName <name> -DryRun` and show the returned plan and `planHash`.
+6. Ask for explicit confirmation of that exact plan. A general request to deploy before the dry run is not confirmation of the rendered plan. If any value, profile, or project directory changes, run a new dry run and confirm again.
+7. Only after confirmation, rerun with `-ProfileName <name> -ConfirmDeployment -PlanHash <approved-hash>`. The script rejects a changed plan. Do not add confirmation based on inference or prior blanket permission.
+8. Report the local packaging, upload, extraction, and remote-command result. On failure, stop; do not silently retry a mutation or substitute another command.
 
-Use PowerShell 7 and pass each value as a separate parameter rather than constructing an interpolated shell command. Save a new profile with:
+For ordinary profile creation, the user only needs to say something like:
 
-```powershell
-pwsh -NoLogo -NoProfile -File <plugin-root>/scripts/profiles.ps1 `
-  -Save -ProfileName production `
-  -HostName example.com -Port 22 -Username deploy `
-  -IdentityFilePath C:\Users\me\.ssh\deploy_ed25519 `
-  -RemoteDirectory /srv/www/example `
-  -DeploymentCommand "npm ci && npm run build"
+```text
+新增一个名为 production 的部署连接
 ```
 
-On macOS or Linux, use that platform's absolute identity path. Then dry-run with:
+The tool must open the native form. Use `scripts/profiles.ps1` directly only when the user explicitly requests a terminal workflow or when diagnosing an unavailable MCP form. Deployment still uses PowerShell 7 with separate parameters:
 
 ```powershell
 pwsh -NoLogo -NoProfile -File <plugin-root>/scripts/deploy.ps1 `
