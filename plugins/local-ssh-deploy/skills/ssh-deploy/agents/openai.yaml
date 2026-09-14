@@ -1,4 +1,0 @@
-interface:
-  display_name: "SSH Remote"
-  short_description: "Save reusable SSH connections and run remote tasks."
-  default_prompt: "Use $ssh-deploy to add a reusable remote server connection."

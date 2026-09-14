@@ -1,7 +1,7 @@
 {
   "name": "local-ssh-deploy",
-  "version": "0.1.0+codex.20260914032128",
-  "description": "Save reusable encrypted SSH server connections for remote commands, maintenance, file workflows, and project deployment.",
+  "version": "0.1.0+codex.20260914034237",
+  "description": "Save and recall reusable SSH server connection metadata so Codex can use the current system's native remote tools.",
   "author": {
     "name": "adoin",
     "url": "https://github.com/adoin"
@@ -11,25 +11,26 @@
   "license": "MIT",
   "keywords": [
     "codex",
-    "deploy",
     "ssh",
-    "scp"
+    "remote",
+    "server",
+    "connections"
   ],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Local SSH Remote",
-    "shortDescription": "Save SSH connections for reusable remote server tasks.",
-    "longDescription": "Opens a local connection editor with a native private-key path picker and saves named SSH connection profiles in the current user's OS credential protection. Reuse a profile for remote commands, maintenance, file workflows, or project deployment; task-specific directories and commands are supplied at execution time and never stored in the profile. Private key contents are never accepted, read, or uploaded.",
+    "shortDescription": "Save SSH connections for Codex to use with native tools.",
+    "longDescription": "Opens a local connection editor with a native private-key path picker and saves named SSH connection metadata in a permission-restricted user configuration file. Codex retrieves a connection by name, detects the plugin-host platform, and performs the requested work itself with native SSH tools. Commands, remote directories, passwords, and private key contents are never stored.",
     "developerName": "adoin",
     "category": "Productivity",
     "capabilities": [
       "Reusable SSH server connections",
-      "Confirmation-gated remote commands",
+      "Named connection lookup",
       "Embedded connection profile editor",
       "Native private-key path picker",
-      "Cross-platform secure profile storage",
-      "Optional project deployment"
+      "Cross-platform user-level storage",
+      "Native-tool platform hints"
     ],
     "defaultPrompt": [
       "Add a remote server connection and open its secure editor.",

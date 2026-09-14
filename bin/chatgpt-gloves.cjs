@@ -29,12 +29,8 @@ function verify() {
         "README.md",
         "mcp/profile-editor.html",
         "mcp/server.cjs",
-        "scripts/LocalSshDeploy.psm1",
-        "scripts/deploy.ps1",
         "scripts/pick-identity-file.ps1",
-        "scripts/profiles.ps1",
-        "scripts/remote.ps1",
-        "skills/ssh-deploy/SKILL.md"
+        "skills/ssh-remote/SKILL.md"
       ]
     }
   ];

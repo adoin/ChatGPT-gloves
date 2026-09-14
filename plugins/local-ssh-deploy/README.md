@@ -1,12 +1,12 @@
 # Local SSH Remote
 
-`local-ssh-deploy` lets a local Codex agent remember reusable SSH server connections securely and use them for remote commands, inspection, maintenance, file workflows, and optional project deployment through the machine's own OpenSSH tools. A saved server is an SSH target, not a Codex remote worker.
+`local-ssh-deploy` is a user-level SSH connection address book for Codex. It saves reusable connection metadata independently of conversations and projects. Codex retrieves a connection by name and then uses the current machine's native `ssh`, `scp`, `sftp`, or `rsync` tools to perform the requested work.
 
-Named profiles are created through the plugin's HTML editor and remain independent of any conversation or project. The plugin serves the editor only on a randomized `127.0.0.1` URL and opens it in a dedicated browser window on Windows or the system browser on macOS and Linux; it also advertises the page as an MCP App resource for compatible clients. This works in Full Access without MCP elicitation or client-side component rendering. Remote commands and project deployments use a hashed dry run and explicit confirmation before execution.
+The plugin does not store or execute remote commands, deployment recipes, or project workflows. It is not a Codex remote-worker configuration tool.
 
 ## Install
 
-Add the repository marketplace in ChatGPT Desktop with:
+Add the GitHub marketplace in ChatGPT Desktop:
 
 ```text
 Source:      https://github.com/adoin/ChatGPT-gloves
@@ -14,58 +14,57 @@ Git ref:     main (or leave blank)
 Sparse path: leave blank
 ```
 
-Or use the Codex CLI:
+Then install `local-ssh-deploy` and start a new Codex task. The user-facing skill is `$ssh-remote`.
 
-```text
-codex plugin marketplace add https://github.com/adoin/ChatGPT-gloves
-codex plugin add local-ssh-deploy@chatgpt-gloves
-```
+## What a connection stores
 
-Start a new Codex task after installation so the `ssh-deploy` skill is discovered.
+Each named connection contains only:
 
-## Prerequisites
+- connection name;
+- host;
+- SSH port;
+- SSH username;
+- the private key's absolute local path.
 
-- Node.js, PowerShell 7 (`pwsh`), and the local OpenSSH `ssh`, `scp`, and `tar` executables on `PATH`.
-- A key-based SSH login. Encrypted keys must already be available through the local SSH agent because batch mode disables password and passphrase prompts.
-- The destination host already recorded in the local OpenSSH `known_hosts` file. Host-key checking is strict.
-- A POSIX destination with `sh`; project deployment also requires `tar`.
-- For project deployment, the private key must be stored outside the project directory being packaged.
-- On Linux, `secret-tool` plus an unlocked Secret Service provider such as GNOME Keyring or KWallet.
+Private key contents, passwords, commands, remote directories, and deployment settings are never stored. The private key itself remains in the user's SSH directory and is never read or uploaded by the plugin.
 
-## Secure profile storage
+## Durable storage
 
-Each named profile stores only host, port, username, and the private key's absolute local path. Commands, working directories, deployment paths, and other task-specific values are never stored in the connection profile. Private key bytes are never read or copied.
+The MCP server is implemented in Node.js and writes `connections.json` to a per-user application configuration directory:
 
-- Windows: DPAPI `CurrentUser` encrypted data at `%LOCALAPPDATA%\OpenAI\Codex\local-ssh-deploy\profiles.dat`, with inheritance removed and ACL access restricted to the current user and SYSTEM.
-- macOS: a generic password item in the user's Keychain under service `openai.codex.local-ssh-deploy` and account `profiles-v1`, accessed directly through Security.framework so profile data is not placed in command-line arguments.
-- Linux: an item in the user's Secret Service collection, written to `secret-tool` through standard input.
+- Windows: `%LOCALAPPDATA%\OpenAI\Codex\local-ssh-deploy\connections.json`
+- macOS: `~/Library/Application Support/OpenAI/Codex/local-ssh-deploy/connections.json`
+- Linux: `${XDG_CONFIG_HOME:-~/.config}/openai-codex/local-ssh-deploy/connections.json`
 
-There is no plaintext fallback. These locations survive task closure, project deletion, and plugin updates. The SSH private key itself must remain at its saved absolute path.
+The directory and file are restricted to the current user. Windows ACLs allow only the current user and SYSTEM; macOS and Linux use directory mode `0700` and file mode `0600`. The file contains connection metadata, not authentication secret material.
+
+These locations survive task closure, project deletion, and plugin updates. They are local to one OS user and are not synchronized between machines.
+
+## Tools
+
+- `add_remote_server_connection`: opens the bundled HTML connection editor;
+- `save_connection`: validates and saves connection metadata;
+- `list_connections`: returns saved connection names and the plugin-host platform;
+- `get_connection`: returns one connection plus `platform`, `sshExecutable`, and `nullConfigPath` so Codex can use native tools;
+- `delete_connection`: removes one explicitly confirmed connection;
+- `pick_identity_file`: returns only a selected absolute path.
+
+On Windows, the file picker uses the built-in Windows PowerShell/WinForms dialog. This tiny adapter is the only remaining PowerShell script; storage and remote work do not depend on PowerShell. macOS uses `osascript`, and Linux uses `zenity` or `kdialog` when available. Manual absolute-path entry is always available.
 
 ## Use
 
-Ask Codex:
+Add a connection:
 
 ```text
-$ssh-deploy 添加一个名为 production 的远程服务器连接
+添加一个名为 production 的远程服务器连接
 ```
 
-Codex calls the bundled `add_remote_server_connection` MCP tool, which starts a randomized loopback URL and opens it in the system browser. The interactive editor contains:
+Use it later:
 
-- connection name at the top;
-- host and port;
-- username;
-- the private key's absolute local path, with manual entry and an operating-system file picker (never key text);
-- an explicit checkbox for replacing an existing profile.
+```text
+用 production 查看磁盘空间
+用 production 查看 nginx 最近的错误日志
+把 build.zip 上传到 production 的 /srv/app
+```
 
-The editor calls `save_profile`, and the MCP server validates the submitted values before calling the same secure profile storage layer. The `pick_identity_file` tool returns only the selected absolute path: it does not read or upload the selected file. Terminal parameters remain available for diagnostics, but they are not the normal setup experience.
-
-If the editor tool is unavailable, the skill reports the MCP startup problem and stops. It does not silently downgrade to terminal data entry. `save_profile_with_form` remains only as a compatibility fallback for hosts that cannot render MCP App resources and do support MCP elicitation.
-
-In a later task, ask “use production to check disk usage” or “restart the service on production.” Codex resolves the connection from the OS credential store, runs `remote.ps1 -ProfileName production -Command <exact-command> -DryRun`, and shows the target, command, optional working directory, and plan hash. After confirmation it reruns with `-ConfirmExecution -PlanHash <approved-hash>`.
-
-Project deployment remains available, but deployment-specific values are supplied for that task rather than stored in the connection. Codex runs `deploy.ps1 -ProfileName production -RemoteDirectory <path> -DeploymentCommand <command> -DryRun`, then uses the confirmed plan hash for execution.
-
-Ask `$ssh-deploy 列出远程连接` to list profiles. Deleting a profile still requires explicit confirmation. Overwriting requires selecting the editor's overwrite checkbox.
-
-To keep each target determined only by the displayed plan, the scripts ignore local SSH config files; the host must therefore be directly reachable with the supplied values. Host-key checking remains strict. Deployment extraction overlays the chosen remote directory and does not delete stale files unless the task's confirmed command explicitly does so.
+Codex calls `get_connection`, checks the returned platform, and builds the native command itself. Host-key verification must remain enabled. Read-only inspections can follow a clear request; remote mutations and file transfers require confirmation of the exact target and action.

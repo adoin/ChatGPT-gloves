@@ -1,0 +1,4 @@
+interface:
+  display_name: "SSH Remote"
+  short_description: "Save SSH connections for Codex to use with native tools."
+  default_prompt: "Use $ssh-remote to add a reusable remote server connection."

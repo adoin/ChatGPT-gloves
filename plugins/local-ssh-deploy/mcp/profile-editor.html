@@ -190,8 +190,8 @@
 
     <form id="profile-form">
       <div class="field">
-        <label for="profileName">连接名称</label>
-        <input id="profileName" name="profileName" type="text" required maxlength="64" pattern="[A-Za-z][A-Za-z0-9._-]{0,63}" autocomplete="off" placeholder="production">
+        <label for="connectionName">连接名称</label>
+        <input id="connectionName" name="connectionName" type="text" required maxlength="64" pattern="[A-Za-z][A-Za-z0-9._-]{0,63}" autocomplete="off" placeholder="production">
         <p class="hint">以后可用这个名字唤起；以字母开头，可包含字母、数字、点、下划线和连字符。</p>
       </div>
 
@@ -248,8 +248,8 @@
       }
 
       function applyToolInput(input) {
-        const suggestedName = input && input.suggestedProfileName;
-        const nameInput = document.getElementById('profileName');
+        const suggestedName = input && input.suggestedConnectionName;
+        const nameInput = document.getElementById('connectionName');
         if (typeof suggestedName === 'string' && suggestedName && !nameInput.value) {
           nameInput.value = suggestedName;
         }
@@ -306,7 +306,7 @@
 
       applyToolInput(window.openai?.toolInput);
       applyToolInput({
-        suggestedProfileName: new URLSearchParams(location.search).get('suggestedProfileName') || '',
+        suggestedConnectionName: new URLSearchParams(location.search).get('suggestedConnectionName') || '',
       });
 
       pickButton.addEventListener('click', async () => {
@@ -339,7 +339,7 @@
         setStatus('正在验证并安全保存…');
         const values = new FormData(form);
         const payload = {
-          profileName: String(values.get('profileName') || '').trim(),
+          connectionName: String(values.get('connectionName') || '').trim(),
           host: String(values.get('host') || '').trim(),
           port: Number(values.get('port')),
           username: String(values.get('username') || '').trim(),
@@ -348,10 +348,10 @@
         };
 
         try {
-          const raw = await callTool('save_profile', payload);
+          const raw = await callTool('save_connection', payload);
           const result = unwrapToolResult(raw);
           if (result?.isError) throw new Error(result.content?.[0]?.text || '保存失败。');
-          const savedName = result?.structuredContent?.profileName || payload.profileName;
+          const savedName = result?.structuredContent?.connectionName || payload.connectionName;
           setStatus(`连接 ${savedName} 已安全保存。`, 'success');
         } catch (error) {
           setStatus(error.message || '保存失败，请检查填写内容。', 'error');
