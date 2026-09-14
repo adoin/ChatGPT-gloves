@@ -317,8 +317,9 @@
           const result = unwrapToolResult(raw);
           if (result?.isError) throw new Error(result.content?.[0]?.text || '无法打开文件选择器。');
           const selected = result?.structuredContent;
-          if (selected?.status === 'selected' && selected.path) {
-            pathInput.value = selected.path;
+          const selectedPath = result?._meta?.selectedPath;
+          if (selected?.status === 'selected' && selectedPath) {
+            pathInput.value = selectedPath;
             pathInput.focus();
             setStatus('已选择私钥路径。文件内容未被读取。', 'success');
           } else {

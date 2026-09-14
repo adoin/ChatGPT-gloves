@@ -32,13 +32,13 @@ Connection names support Chinese and other Unicode letters, numbers, spaces, dot
 
 ## Durable storage
 
-The MCP server is implemented in Node.js and writes `connections.json` to a per-user application configuration directory:
+The MCP server is implemented in Node.js and writes `connections.json` plus a generated OpenSSH `ssh_config` to a per-user application configuration directory:
 
 - Windows: `%LOCALAPPDATA%\OpenAI\Codex\local-ssh-deploy\connections.json`
 - macOS: `~/Library/Application Support/OpenAI/Codex/local-ssh-deploy/connections.json`
 - Linux: `${XDG_CONFIG_HOME:-~/.config}/openai-codex/local-ssh-deploy/connections.json`
 
-The directory and file are restricted to the current user. Windows ACLs allow only the current user and SYSTEM; macOS and Linux use directory mode `0700` and file mode `0600`. The file contains connection metadata, not authentication secret material.
+The directory and files are restricted to the current user. Windows ACLs allow only the current user and SYSTEM; macOS and Linux use directory mode `0700` and file mode `0600`. OpenSSH reads the real host, username, port, and identity-file path from `ssh_config`; Codex receives only a hashed alias and the config path.
 
 These locations survive task closure, project deletion, and plugin updates. They are local to one OS user and are not synchronized between machines.
 
@@ -46,8 +46,8 @@ These locations survive task closure, project deletion, and plugin updates. They
 
 - `add_remote_server_connection`: opens the bundled HTML connection editor;
 - `save_connection`: validates and saves connection metadata;
-- `list_connections`: returns saved connection names and the plugin-host platform;
-- `get_connection`: returns one connection plus `platform`, `sshExecutable`, and `nullConfigPath` so Codex can use native tools;
+- `list_connections`: returns saved connection names only;
+- `get_connection`: returns only an opaque SSH alias, the restricted SSH config path, platform, and executable name;
 - `delete_connection`: removes one explicitly confirmed connection;
 - `pick_identity_file`: returns only a selected absolute path.
 
@@ -69,4 +69,6 @@ Use it later:
 把 build.zip 上传到“生产服务器”的 /srv/app
 ```
 
-Codex calls `get_connection`, checks the returned platform, and builds the native command itself. Host-key verification must remain enabled. Read-only inspections can follow a clear request; remote mutations and file transfers require confirmation of the exact target and action.
+Inventory questions use `list_connections` and return names only. Immediately before an actual server task, Codex calls `get_connection` and receives an opaque handle, then runs `ssh -F <sshConfigPath> <sshAlias>` or the equivalent native-tool form. The real host, username, port, and identity-file path stay in the restricted local files and are read directly by OpenSSH. Host-key verification must remain enabled. Read-only inspections can follow a clear request; remote mutations and file transfers require confirmation of the exact target and action.
+
+The plugin cannot provide cryptographic isolation from a Codex task running with unrestricted filesystem access under the same OS account. Its normal tools and skill are designed to keep raw connection metadata out of model-visible tool results, chat replies, and command lines; Full Access can still technically read any same-user file if explicitly directed to do so.

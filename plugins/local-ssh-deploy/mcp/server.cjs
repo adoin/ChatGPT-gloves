@@ -23,15 +23,15 @@ let editorServerReady;
 
 function platformDetails() {
   if (process.platform === 'win32') {
-    return { platform: 'windows', sshExecutable: 'ssh.exe', nullConfigPath: 'NUL' };
+    return { platform: 'windows', sshExecutable: 'ssh.exe' };
   }
   if (process.platform === 'darwin') {
-    return { platform: 'macos', sshExecutable: 'ssh', nullConfigPath: '/dev/null' };
+    return { platform: 'macos', sshExecutable: 'ssh' };
   }
   if (process.platform === 'linux') {
-    return { platform: 'linux', sshExecutable: 'ssh', nullConfigPath: '/dev/null' };
+    return { platform: 'linux', sshExecutable: 'ssh' };
   }
-  return { platform: process.platform, sshExecutable: 'ssh', nullConfigPath: '/dev/null' };
+  return { platform: process.platform, sshExecutable: 'ssh' };
 }
 
 function storeInfo() {
@@ -51,7 +51,11 @@ function storeInfo() {
     }
     directory = path.join(configRoot, 'openai-codex', 'local-ssh-deploy');
   }
-  return { directory, file: path.join(directory, 'connections.json') };
+  return {
+    directory,
+    file: path.join(directory, 'connections.json'),
+    sshConfigFile: path.join(directory, 'ssh_config'),
+  };
 }
 
 function assertNoControlCharacters(name, value) {
@@ -206,7 +210,56 @@ function writeStore(document) {
       fs.rmSync(temporary, { force: true });
     }
   }
+  writeSshConfig(document, store);
   return store;
+}
+
+function connectionAlias(connectionName) {
+  return `codex-${crypto.createHash('sha256').update(connectionName, 'utf8').digest('hex').slice(0, 24)}`;
+}
+
+function quoteSshConfigValue(value) {
+  const portable = process.platform === 'win32' ? value.replaceAll('\\', '/') : value;
+  return `"${portable.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+}
+
+function renderSshConfig(document) {
+  const lines = [
+    '# Managed by Local SSH Remote. Do not edit.',
+    '# Connection names are represented by opaque aliases.',
+    '',
+  ];
+  for (const connectionName of Object.keys(document.connections).sort()) {
+    const connection = document.connections[connectionName];
+    lines.push(
+      `Host ${connectionAlias(connectionName)}`,
+      `  HostName ${connection.host}`,
+      `  Port ${connection.port}`,
+      `  User ${connection.username}`,
+      `  IdentityFile ${quoteSshConfigValue(connection.identityFilePath)}`,
+      '  BatchMode yes',
+      '  IdentitiesOnly yes',
+      '  StrictHostKeyChecking yes',
+      '  ConnectTimeout 15',
+      '',
+    );
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+function writeSshConfig(document, store = ensureStoreDirectory()) {
+  const temporary = path.join(store.directory, `.ssh-config-${crypto.randomUUID()}.tmp`);
+  try {
+    fs.writeFileSync(temporary, renderSshConfig(document), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    restrictPath(temporary, false);
+    fs.renameSync(temporary, store.sshConfigFile);
+    restrictPath(store.sshConfigFile, false);
+  } finally {
+    if (fs.existsSync(temporary)) {
+      fs.rmSync(temporary, { force: true });
+    }
+  }
+  return store.sshConfigFile;
 }
 
 const connectionSchema = {
@@ -272,10 +325,9 @@ const tools = [
       type: 'object',
       properties: {
         suggestedConnectionName: { type: 'string' },
-        editorUrl: { type: 'string' },
         browserOpened: { type: 'boolean' },
       },
-      required: ['suggestedConnectionName', 'editorUrl', 'browserOpened'],
+      required: ['suggestedConnectionName', 'browserOpened'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -290,13 +342,12 @@ const tools = [
       type: 'object',
       properties: {
         connectionName: { type: 'string' },
-        storeLocation: { type: 'string' },
-        platform: { type: 'string' },
       },
-      required: ['connectionName', 'storeLocation', 'platform'],
+      required: ['connectionName'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    _meta: { ui: { visibility: ['app'] }, 'openai/visibility': 'private' },
   },
   {
     name: 'pick_identity_file',
@@ -307,26 +358,24 @@ const tools = [
       type: 'object',
       properties: {
         status: { type: 'string', enum: ['selected', 'cancelled'] },
-        path: { type: 'string' },
       },
-      required: ['status', 'path'],
+      required: ['status'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    _meta: { ui: { visibility: ['app'] }, 'openai/visibility': 'private' },
   },
   {
     name: 'list_connections',
     title: '列出 SSH 远程连接',
-    description: 'Use this when the user asks which SSH server connections are remembered. Returns connection names and the current plugin-host platform.',
+    description: 'Use this when the user asks which SSH server connections are remembered. Returns connection names only. Never call get_connection merely to describe or enumerate saved connections.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     outputSchema: {
       type: 'object',
       properties: {
         connections: { type: 'array', items: { type: 'string' } },
-        storeLocation: { type: 'string' },
-        platform: { type: 'string' },
       },
-      required: ['connections', 'storeLocation', 'platform'],
+      required: ['connections'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -334,7 +383,7 @@ const tools = [
   {
     name: 'get_connection',
     title: '读取 SSH 远程连接',
-    description: 'Use this before any task that targets a saved SSH connection. Returns connection arguments plus the current plugin-host platform so Codex can use the native ssh, scp, or rsync tools itself. Never returns private key contents.',
+    description: 'Use this only immediately before an actual user-requested task on a saved SSH connection. Returns an opaque SSH alias and dedicated config path so Codex can use native ssh, scp, or rsync without receiving the host, username, port, or identity-file path. Never use it just to list or describe saved connections.',
     inputSchema: {
       type: 'object',
       properties: { connectionName: { type: 'string', minLength: 1, maxLength: 64 } },
@@ -345,15 +394,12 @@ const tools = [
       type: 'object',
       properties: {
         connectionName: { type: 'string' },
-        host: { type: 'string' },
-        port: { type: 'integer' },
-        username: { type: 'string' },
-        identityFilePath: { type: 'string' },
+        sshAlias: { type: 'string' },
+        sshConfigPath: { type: 'string' },
         platform: { type: 'string' },
         sshExecutable: { type: 'string' },
-        nullConfigPath: { type: 'string' },
       },
-      required: ['connectionName', 'host', 'port', 'username', 'identityFilePath', 'platform', 'sshExecutable', 'nullConfigPath'],
+      required: ['connectionName', 'sshAlias', 'sshConfigPath', 'platform', 'sshExecutable'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -376,9 +422,8 @@ const tools = [
       properties: {
         connectionName: { type: 'string' },
         deleted: { type: 'boolean' },
-        storeLocation: { type: 'string' },
       },
-      required: ['connectionName', 'deleted', 'storeLocation'],
+      required: ['connectionName', 'deleted'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
@@ -406,24 +451,22 @@ function saveConnection(value) {
   }
   document.connections[value.connectionName] = connection;
   const store = writeStore(document);
-  const platform = platformDetails().platform;
   return {
     content: [{ type: 'text', text: `Saved SSH remote connection "${value.connectionName}".` }],
-    structuredContent: { connectionName: value.connectionName, storeLocation: store.file, platform },
+    structuredContent: { connectionName: value.connectionName },
+    _meta: { storeLocation: store.file },
   };
 }
 
 function listConnections() {
   const document = readStore();
   const connections = Object.keys(document.connections).sort();
-  const store = storeInfo();
-  const platform = platformDetails().platform;
   return {
     content: [{
       type: 'text',
       text: connections.length ? `Saved SSH connections: ${connections.join(', ')}` : 'No SSH connections are saved.',
     }],
-    structuredContent: { connections, storeLocation: store.file, platform },
+    structuredContent: { connections },
   };
 }
 
@@ -434,10 +477,24 @@ function getConnection(value) {
   if (!connection) {
     throw new Error(`Connection "${value.connectionName}" does not exist.`);
   }
+  try {
+    if (!fs.statSync(connection.identityFilePath).isFile()) {
+      throw new Error('not a file');
+    }
+  } catch {
+    throw new Error(`The authentication file configured for connection "${value.connectionName}" is unavailable. Edit the connection before using it.`);
+  }
   const runtime = platformDetails();
-  const output = { connectionName: value.connectionName, ...connection, ...runtime };
+  const sshConfigPath = writeSshConfig(document);
+  const output = {
+    connectionName: value.connectionName,
+    sshAlias: connectionAlias(value.connectionName),
+    sshConfigPath,
+    platform: runtime.platform,
+    sshExecutable: runtime.sshExecutable,
+  };
   return {
-    content: [{ type: 'text', text: `Loaded SSH connection "${value.connectionName}" for ${runtime.platform}. Private key contents were not read.` }],
+    content: [{ type: 'text', text: `Prepared an opaque SSH handle for connection "${value.connectionName}" on ${runtime.platform}. Raw connection fields and private key contents were not returned.` }],
     structuredContent: output,
   };
 }
@@ -455,7 +512,8 @@ function deleteConnection(value) {
   const store = writeStore(document);
   return {
     content: [{ type: 'text', text: `Deleted SSH connection "${value.connectionName}".` }],
-    structuredContent: { connectionName: value.connectionName, deleted: true, storeLocation: store.file },
+    structuredContent: { connectionName: value.connectionName, deleted: true },
+    _meta: { storeLocation: store.file },
   };
 }
 
@@ -607,11 +665,15 @@ async function openConnectionEditor(value) {
     content: [{
       type: 'text',
       text: browserOpened
-        ? `SSH connection editor opened at ${editorUrl}.`
-        : `SSH connection editor is ready at ${editorUrl}.`,
+        ? 'SSH connection editor opened in the system browser.'
+        : 'SSH connection editor is ready for the UI host.',
     }],
-    structuredContent: { suggestedConnectionName, editorUrl, browserOpened },
-    _meta: { ui: { resourceUri: PROFILE_EDITOR_URI }, 'openai/outputTemplate': PROFILE_EDITOR_URI },
+    structuredContent: { suggestedConnectionName, browserOpened },
+    _meta: {
+      ui: { resourceUri: PROFILE_EDITOR_URI },
+      'openai/outputTemplate': PROFILE_EDITOR_URI,
+      editorUrl,
+    },
   };
 }
 
@@ -666,7 +728,8 @@ function pickIdentityFile() {
         ? 'Selected a local SSH private key path. The file contents were not read.'
         : 'File selection was cancelled.',
     }],
-    structuredContent: selected,
+    structuredContent: { status: selected.status },
+    _meta: { selectedPath: selected.path },
   };
 }
 
@@ -711,7 +774,7 @@ async function handleRequest(message) {
         protocolVersion: message.params?.protocolVersion || '2025-06-18',
         capabilities: { tools: {}, resources: {} },
         serverInfo: { name: SERVER_NAME, title: 'Local SSH Connections', version: SERVER_VERSION },
-        instructions: 'Treat “添加一个远程服务器连接” as a request for this plugin unless the user explicitly asks for a Codex remote worker. Use add_remote_server_connection to save connection fields, list_connections to discover names, and get_connection before any saved-server task. get_connection reports the plugin-host platform. Codex must then use the native ssh/scp/rsync tools itself. Never read private key contents.',
+        instructions: 'Treat “添加一个远程服务器连接” as a request for this plugin unless the user explicitly asks for a Codex remote worker. list_connections returns names only; never call get_connection merely to enumerate or describe saved connections. Call get_connection only immediately before an actual requested server task. It returns an opaque SSH alias and dedicated config path, never raw host, username, port, or identity-file path. Use native ssh/scp/rsync with -F <sshConfigPath> <sshAlias>. Never read the connection store, generated SSH config, or private key contents.',
       });
       return;
     case 'ping':

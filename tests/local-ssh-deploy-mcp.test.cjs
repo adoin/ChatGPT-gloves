@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -80,7 +81,7 @@ async function initialize(client) {
   const response = await client.receive();
   assert.equal(response.id, 1);
   assert.equal(response.result.serverInfo.name, 'local-ssh-deploy');
-  assert.match(response.result.instructions, /get_connection.*native ssh\/scp\/rsync/s);
+  assert.match(response.result.instructions, /get_connection.*opaque SSH alias.*Never read/s);
 }
 
 async function call(client, id, name, argumentsValue = {}) {
@@ -136,13 +137,16 @@ test('server exposes connection-address-book tools and the bundled editor', asyn
   assert.equal(listed.result.tools.some((tool) => /command|deploy/i.test(tool.name)), false);
   const editorTool = listed.result.tools[0];
   assert.equal(editorTool._meta.ui.resourceUri, editorUri);
+  assert.deepEqual(listed.result.tools[1]._meta.ui.visibility, ['app']);
+  assert.deepEqual(listed.result.tools[2]._meta.ui.visibility, ['app']);
 
   const opened = await call(client, 3, 'add_remote_server_connection', { suggestedConnectionName: '生产服务器' });
   assert.equal(opened.structuredContent.suggestedConnectionName, '生产服务器');
   assert.equal(opened.structuredContent.browserOpened, false);
-  assert.equal(new URL(opened.structuredContent.editorUrl).searchParams.get('suggestedConnectionName'), '生产服务器');
+  assert.equal(opened.structuredContent.editorUrl, undefined);
+  assert.equal(new URL(opened._meta.editorUrl).searchParams.get('suggestedConnectionName'), '生产服务器');
 
-  const response = await fetch(opened.structuredContent.editorUrl);
+  const response = await fetch(opened._meta.editorUrl);
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
   const html = await response.text();
@@ -171,32 +175,43 @@ test('save, list, get, overwrite, and delete operate on one durable user store',
   };
   const saved = await call(client, 2, 'save_connection', values);
   assert.equal(saved.isError, undefined);
-  assert.equal(saved.structuredContent.platform, 'windows');
-  assert.ok(saved.structuredContent.storeLocation.startsWith(item.localAppData));
+  assert.deepEqual(saved.structuredContent, { connectionName: '生产服务器' });
+  const storePath = path.join(item.localAppData, 'OpenAI', 'Codex', 'local-ssh-deploy', 'connections.json');
+  const sshConfigPath = path.join(item.localAppData, 'OpenAI', 'Codex', 'local-ssh-deploy', 'ssh_config');
+  assert.equal(saved._meta.storeLocation, storePath);
 
-  const storedText = fs.readFileSync(saved.structuredContent.storeLocation, 'utf8');
+  const storedText = fs.readFileSync(storePath, 'utf8');
   const stored = JSON.parse(storedText);
   assert.deepEqual(Object.keys(stored.connections['生产服务器']), ['host', 'port', 'username', 'identityFilePath']);
   assert.equal(stored.connections['生产服务器'].host, 'server.example.com');
   assert.doesNotMatch(storedText, /PRIVATE-KEY-CONTENT-MUST-NOT-APPEAR/);
-  const acl = spawnSync('icacls.exe', [saved.structuredContent.storeLocation], { encoding: 'utf8' });
+  const acl = spawnSync('icacls.exe', [storePath], { encoding: 'utf8' });
   assert.equal(acl.status, 0, acl.stderr);
   assert.doesNotMatch(acl.stdout, /\(I\)/);
 
   const listed = await call(client, 3, 'list_connections');
-  assert.deepEqual(listed.structuredContent.connections, ['生产服务器']);
+  assert.deepEqual(listed.structuredContent, { connections: ['生产服务器'] });
+  assert.doesNotMatch(JSON.stringify(listed), /server\.example\.com|id_ed25519|"username":"deploy"/);
 
   const loaded = await call(client, 4, 'get_connection', { connectionName: '生产服务器' });
+  const sshAlias = `codex-${crypto.createHash('sha256').update('生产服务器', 'utf8').digest('hex').slice(0, 24)}`;
   assert.deepEqual(loaded.structuredContent, {
     connectionName: '生产服务器',
-    host: 'server.example.com',
-    port: 2222,
-    username: 'deploy',
-    identityFilePath: fs.realpathSync(item.identity),
+    sshAlias,
+    sshConfigPath,
     platform: 'windows',
     sshExecutable: 'ssh.exe',
-    nullConfigPath: 'NUL',
   });
+  assert.doesNotMatch(JSON.stringify(loaded), /server\.example\.com|id_ed25519|2222|"username":"deploy"/);
+  const sshConfig = fs.readFileSync(sshConfigPath, 'utf8');
+  assert.match(sshConfig, new RegExp(`Host ${sshAlias}`));
+  assert.match(sshConfig, /HostName server\.example\.com/);
+  assert.match(sshConfig, /Port 2222/);
+  assert.match(sshConfig, /User deploy/);
+  assert.match(sshConfig, /IdentityFile .*id_ed25519/);
+  const configAcl = spawnSync('icacls.exe', [sshConfigPath], { encoding: 'utf8' });
+  assert.equal(configAcl.status, 0, configAcl.stderr);
+  assert.doesNotMatch(configAcl.stdout, /\(I\)/);
 
   const duplicate = await call(client, 5, 'save_connection', values);
   assert.equal(duplicate.isError, true);
@@ -209,12 +224,15 @@ test('save, list, get, overwrite, and delete operate on one durable user store',
   });
   assert.equal(overwritten.isError, undefined);
   const reloaded = await call(client, 7, 'get_connection', { connectionName: '生产服务器' });
-  assert.equal(reloaded.structuredContent.host, 'replacement.example.com');
+  assert.deepEqual(reloaded.structuredContent, loaded.structuredContent);
+  const replacedConfig = fs.readFileSync(sshConfigPath, 'utf8');
+  assert.match(replacedConfig, /HostName replacement\.example\.com/);
+  assert.doesNotMatch(replacedConfig, /HostName server\.example\.com/);
 
   const refused = await call(client, 8, 'delete_connection', { connectionName: '生产服务器', confirmDelete: false });
   assert.equal(refused.isError, true);
   const deleted = await call(client, 9, 'delete_connection', { connectionName: '生产服务器', confirmDelete: true });
-  assert.equal(deleted.structuredContent.deleted, true);
+  assert.deepEqual(deleted.structuredContent, { connectionName: '生产服务器', deleted: true });
   const empty = await call(client, 10, 'list_connections');
   assert.deepEqual(empty.structuredContent.connections, []);
 });
