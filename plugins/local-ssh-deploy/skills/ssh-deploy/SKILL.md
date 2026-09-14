@@ -19,13 +19,14 @@ Use the bundled `save_profile_with_form` MCP tool to collect and save named depl
 ## Workflow
 
 1. When the user refers to an existing server or asks what is remembered, call `list_profiles`. Do not search projects or conversation history for connection data.
-2. When the user asks to add, configure, save, or replace a connection, call `save_profile_with_form` immediately. Pass a suggested profile name only when the user already supplied one. Do not ask the user to paste a field template into chat.
-3. The form collects the profile name and six allowed fields. Its private-key field accepts only an absolute local path, never key contents. The remote directory must be a non-root absolute POSIX path using only letters, digits, `.`, `_`, `-`, and `/`. The MCP server and storage script validate the submitted values again before saving.
-4. Replacing an existing profile requires the user to select the form's explicit overwrite control. Deleting one still requires explicit confirmation and `profiles.ps1 -Delete -ConfirmDelete`.
-5. Establish that the current working directory is the intended project. Run `deploy.ps1 -ProfileName <name> -DryRun` and show the returned plan and `planHash`.
-6. Ask for explicit confirmation of that exact plan. A general request to deploy before the dry run is not confirmation of the rendered plan. If any value, profile, or project directory changes, run a new dry run and confirm again.
-7. Only after confirmation, rerun with `-ProfileName <name> -ConfirmDeployment -PlanHash <approved-hash>`. The script rejects a changed plan. Do not add confirmation based on inference or prior blanket permission.
-8. Report the local packaging, upload, extraction, and remote-command result. On failure, stop; do not silently retry a mutation or substitute another command.
+2. When the user asks to add, configure, save, or replace a connection, use an approval-enabled permission mode. If the task is in Full Access with `approval_policy=Never`, explain that this Codex mode can auto-decline MCP input forms and ask the user to switch the task's permission selector before calling the tool. Do not repeatedly call a form that policy already declined.
+3. Call `save_profile_with_form` after the permission mode permits interactive MCP forms. Pass a suggested profile name only when the user already supplied one. Do not ask the user to paste a field template into chat.
+4. The form collects the profile name and six allowed fields. Its private-key field accepts only an absolute local path, never key contents. The remote directory must be a non-root absolute POSIX path using only letters, digits, `.`, `_`, `-`, and `/`. The MCP server and storage script validate the submitted values again before saving.
+5. Replacing an existing profile requires the user to select the form's explicit overwrite control. Deleting one still requires explicit confirmation and `profiles.ps1 -Delete -ConfirmDelete`.
+6. Establish that the current working directory is the intended project. Run `deploy.ps1 -ProfileName <name> -DryRun` and show the returned plan and `planHash`.
+7. Ask for explicit confirmation of that exact plan. A general request to deploy before the dry run is not confirmation of the rendered plan. If any value, profile, or project directory changes, run a new dry run and confirm again.
+8. Only after confirmation, rerun with `-ProfileName <name> -ConfirmDeployment -PlanHash <approved-hash>`. The script rejects a changed plan. Do not add confirmation based on inference or prior blanket permission.
+9. Report the local packaging, upload, extraction, and remote-command result. On failure, stop; do not silently retry a mutation or substitute another command.
 
 For ordinary profile creation, the user only needs to say something like:
 

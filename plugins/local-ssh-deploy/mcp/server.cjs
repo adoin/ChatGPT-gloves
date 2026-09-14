@@ -275,10 +275,22 @@ async function saveProfileWithForm(argumentsValue) {
     requestedSchema,
   });
 
-  if (response.action !== 'accept') {
+  if (response.action === 'decline') {
+    return {
+      content: [{
+        type: 'text',
+        text: 'Codex declined the profile form because the current permission policy does not allow MCP elicitations. Switch the task from Full Access to an approval-enabled permission mode, then try again.',
+      }],
+      isError: true,
+    };
+  }
+  if (response.action === 'cancel') {
     return {
       content: [{ type: 'text', text: 'SSH deployment profile form was cancelled; nothing was saved.' }],
     };
+  }
+  if (response.action !== 'accept') {
+    throw new Error(`Unsupported profile form response action: ${response.action}.`);
   }
 
   assertFormContent(response.content);

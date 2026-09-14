@@ -153,6 +153,24 @@ test('MCP server advertises a native profile form and handles cancellation', asy
   assert.equal(cancelled.result.isError, undefined);
   assert.match(cancelled.result.content[0].text, /cancelled/);
   assert.equal(fs.existsSync(path.join(item.localAppData, 'OpenAI', 'Codex', 'local-ssh-deploy', 'profiles.dat')), false);
+
+  client.send({
+    jsonrpc: '2.0',
+    id: 4,
+    method: 'tools/call',
+    params: { name: 'save_profile_with_form', arguments: {} },
+  });
+  const policyForm = await client.receive();
+  assert.equal(policyForm.method, 'elicitation/create');
+  client.send({
+    jsonrpc: '2.0',
+    id: policyForm.id,
+    result: { action: 'decline', content: null },
+  });
+  const declined = await client.receive();
+  assert.equal(declined.id, 4);
+  assert.equal(declined.result.isError, true);
+  assert.match(declined.result.content[0].text, /permission policy.*Full Access/i);
 });
 
 test('accepted MCP form writes an encrypted profile without key contents', { skip: process.platform !== 'win32' }, async (t) => {

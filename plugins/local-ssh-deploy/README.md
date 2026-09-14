@@ -64,6 +64,8 @@ The MCP server validates the submitted form and then calls the same secure profi
 
 If the form tool is unavailable, the skill reports the MCP startup problem and stops. It does not silently downgrade to terminal data entry.
 
+Interactive profile forms require a Codex permission mode that permits MCP elicitations. In desktop versions that auto-decline input forms under Full Access (`approval_policy=Never`), switch the task's permission selector to an approval-enabled mode before asking `$ssh-deploy` to add a connection. A policy decline is reported separately from a form the user actually cancelled.
+
 In a later task, ask “deploy this project using the saved production profile.” Codex lists or loads the profile from the OS credential store, runs `deploy.ps1 -ProfileName production -DryRun`, and shows the complete plan plus its hash. Confirm that rendered plan before Codex reruns it with `-ConfirmDeployment -PlanHash <approved-hash>`.
 
 Ask `$ssh-deploy 列出部署档案` to list profiles. Deleting a profile still requires explicit confirmation. Overwriting requires selecting the form's overwrite checkbox.
