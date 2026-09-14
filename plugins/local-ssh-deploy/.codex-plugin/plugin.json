@@ -1,7 +1,7 @@
 {
   "name": "local-ssh-deploy",
-  "version": "0.1.0+codex.20260914025957",
-  "description": "Add remote server connections as encrypted SSH deployment profiles, then publish local projects with confirmation-gated deployment.",
+  "version": "0.1.0+codex.20260914032128",
+  "description": "Save reusable encrypted SSH server connections for remote commands, maintenance, file workflows, and project deployment.",
   "author": {
     "name": "adoin",
     "url": "https://github.com/adoin"
@@ -18,23 +18,23 @@
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
-    "displayName": "Local SSH Deploy",
-    "shortDescription": "Add remote server connections and deploy local projects.",
-    "longDescription": "Opens an embedded profile editor with a native private-key path picker, saves named SSH deployment profiles in the current user's OS credential protection, then packages and uploads the current project with OpenSSH and runs an explicit command only after a hashed dry run and confirmation. Private key contents are never accepted, read, or uploaded.",
+    "displayName": "Local SSH Remote",
+    "shortDescription": "Save SSH connections for reusable remote server tasks.",
+    "longDescription": "Opens a local connection editor with a native private-key path picker and saves named SSH connection profiles in the current user's OS credential protection. Reuse a profile for remote commands, maintenance, file workflows, or project deployment; task-specific directories and commands are supplied at execution time and never stored in the profile. Private key contents are never accepted, read, or uploaded.",
     "developerName": "adoin",
     "category": "Productivity",
     "capabilities": [
-      "Dry-run deployment planning",
-      "Confirmation-gated SSH upload",
-      "Embedded deployment profile editor",
+      "Reusable SSH server connections",
+      "Confirmation-gated remote commands",
+      "Embedded connection profile editor",
       "Native private-key path picker",
-      "Cross-platform secure deployment profiles",
-      "Explicit remote deployment commands"
+      "Cross-platform secure profile storage",
+      "Optional project deployment"
     ],
     "defaultPrompt": [
       "Add a remote server connection and open its secure editor.",
-      "Deploy this local site using my saved production profile.",
-      "List my saved SSH deployment profiles."
+      "Check disk usage on my saved production server.",
+      "List my saved SSH server connections."
     ],
     "brandColor": "#2563EB"
   }

@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process');
 const test = require('node:test');
 
 const deployScript = path.resolve(__dirname, '../plugins/local-ssh-deploy/scripts/deploy.ps1');
+const remoteScript = path.resolve(__dirname, '../plugins/local-ssh-deploy/scripts/remote.ps1');
 const profilesScript = path.resolve(__dirname, '../plugins/local-ssh-deploy/scripts/profiles.ps1');
 const moduleScript = path.resolve(__dirname, '../plugins/local-ssh-deploy/scripts/LocalSshDeploy.psm1');
 const pwshCommand = process.platform === 'win32' ? 'pwsh.exe' : 'pwsh';
@@ -53,12 +54,12 @@ function runDeploy(item, options = {}) {
       '-Port', '2222',
       '-Username', username,
       '-IdentityFilePath', identity,
-      '-RemoteDirectory', remoteDirectory,
-      '-DeploymentCommand', deploymentCommand,
     ];
   return spawnSync(pwsh, [
     '-NoLogo', '-NoProfile', '-File', deployScript,
     ...connectionArgs,
+    '-RemoteDirectory', remoteDirectory,
+    '-DeploymentCommand', deploymentCommand,
     ...(mode ? [mode] : []),
     ...(planHash ? ['-PlanHash', planHash] : []),
   ], { cwd, encoding: 'utf8', env });
@@ -78,10 +79,27 @@ function saveProfile(item, profileName = 'production', extraArgs = []) {
     '-Port', '2222',
     '-Username', 'release_bot',
     '-IdentityFilePath', item.identity,
-    '-RemoteDirectory', '/srv/www/example',
-    '-DeploymentCommand', 'npm ci && npm run build',
     ...extraArgs,
   ]);
+}
+
+function runRemote(item, options = {}) {
+  const {
+    profileName = 'production',
+    workingDirectory,
+    command = 'df -h',
+    mode,
+    planHash,
+    env = testEnv(item),
+  } = options;
+  return spawnSync(pwsh, [
+    '-NoLogo', '-NoProfile', '-File', remoteScript,
+    '-ProfileName', profileName,
+    '-Command', command,
+    ...(workingDirectory ? ['-WorkingDirectory', workingDirectory] : []),
+    ...(mode ? [mode] : []),
+    ...(planHash ? ['-PlanHash', planHash] : []),
+  ], { cwd: item.root, encoding: 'utf8', env });
 }
 
 test('the native macOS Keychain bridge compiles', () => {
@@ -135,6 +153,34 @@ test('real execution requires confirmation and the approved plan hash', (t) => {
   assert.match(changedPlan.stderr, /do not match the approved dry-run plan hash/);
 });
 
+test('saved connection supports general remote command plans without deployment defaults', { skip: process.platform !== 'win32' }, (t) => {
+  const item = fixture();
+  t.after(() => fs.rmSync(item.root, { recursive: true, force: true }));
+
+  const saved = saveProfile(item);
+  assert.equal(saved.status, 0, saved.stderr);
+  const shown = runProfiles(item, ['-Show', '-ProfileName', 'production']);
+  assert.equal(shown.status, 0, shown.stderr);
+  const connection = JSON.parse(shown.stdout).connection;
+  assert.deepEqual(Object.keys(connection), ['host', 'port', 'username', 'identityFilePath']);
+
+  const plan = runRemote(item, {
+    command: 'journalctl -u nginx --since today',
+    workingDirectory: '/var/log',
+    mode: '-DryRun',
+  });
+  assert.equal(plan.status, 0, plan.stderr);
+  const output = JSON.parse(plan.stdout);
+  assert.equal(output.plan.profileName, 'production');
+  assert.equal(output.plan.workingDirectory, '/var/log');
+  assert.equal(output.plan.command, 'journalctl -u nginx --since today');
+  assert.match(output.planHash, /^[a-f0-9]{64}$/);
+
+  const unconfirmed = runRemote(item);
+  assert.notEqual(unconfirmed.status, 0);
+  assert.match(unconfirmed.stderr, /without -ConfirmExecution/);
+});
+
 test('rejects an identity file inside the project archive', (t) => {
   const item = fixture();
   t.after(() => fs.rmSync(item.root, { recursive: true, force: true }));
@@ -152,7 +198,7 @@ test('rejects remote path and command control-character injection', (t) => {
 
   const badPath = runDeploy(item, { remoteDirectory: '/srv/www;reboot', mode: '-DryRun' });
   assert.notEqual(badPath.status, 0);
-  assert.match(badPath.stderr, /RemoteDirectory must be a non-root absolute POSIX path/);
+  assert.match(badPath.stderr, /WorkingDirectory must be an absolute POSIX path/);
 
   const badCommand = runDeploy(item, { deploymentCommand: 'npm ci\nreboot', mode: '-DryRun' });
   assert.notEqual(badCommand.status, 0);

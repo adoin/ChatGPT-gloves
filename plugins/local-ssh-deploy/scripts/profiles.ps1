@@ -30,12 +30,6 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = 'Save')]
     [string] $IdentityFilePath,
 
-    [Parameter(Mandatory = $true, ParameterSetName = 'Save')]
-    [string] $RemoteDirectory,
-
-    [Parameter(Mandatory = $true, ParameterSetName = 'Save')]
-    [string] $DeploymentCommand,
-
     [Parameter(ParameterSetName = 'Save')]
     [switch] $ConfirmOverwrite,
 
@@ -55,9 +49,7 @@ switch ($PSCmdlet.ParameterSetName) {
             -HostName $HostName `
             -Port $Port `
             -Username $Username `
-            -IdentityFilePath $IdentityFilePath `
-            -RemoteDirectory $RemoteDirectory `
-            -DeploymentCommand $DeploymentCommand
+            -IdentityFilePath $IdentityFilePath
         Save-DeploymentProfile -ProfileName $ProfileName -ConnectionData $connection -ConfirmOverwrite:$ConfirmOverwrite
         [ordered]@{
             action = 'saved'

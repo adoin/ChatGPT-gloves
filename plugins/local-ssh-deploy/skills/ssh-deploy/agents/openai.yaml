@@ -1,4 +1,4 @@
 interface:
-  display_name: "SSH Deploy"
-  short_description: "Save SSH targets with an editor and publish local builds."
-  default_prompt: "Use $ssh-deploy to add a remote server connection and open its secure profile editor."
+  display_name: "SSH Remote"
+  short_description: "Save reusable SSH connections and run remote tasks."
+  default_prompt: "Use $ssh-deploy to add a reusable remote server connection."

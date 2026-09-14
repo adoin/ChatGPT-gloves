@@ -28,7 +28,7 @@ const profileFormSchema = {
   properties: {
     profileName: {
       type: 'string',
-      title: '档案名称',
+      title: '连接名称',
       description: '用于以后唤起，例如 production。只能使用字母、数字、点、下划线和连字符。',
       minLength: 1,
       maxLength: 64,
@@ -60,24 +60,10 @@ const profileFormSchema = {
       minLength: 1,
       maxLength: 1024,
     },
-    remoteDirectory: {
-      type: 'string',
-      title: '远程目录',
-      description: '非根 POSIX 绝对路径，例如 /srv/www/example。',
-      minLength: 2,
-      maxLength: 1024,
-    },
-    deploymentCommand: {
-      type: 'string',
-      title: '部署命令',
-      description: '项目上传并解压后，在远程目录中运行的准确单行命令。',
-      minLength: 1,
-      maxLength: 4096,
-    },
     overwriteExisting: {
       type: 'boolean',
-      title: '覆盖同名档案',
-      description: '只有明确希望替换已有档案时才勾选。',
+      title: '覆盖同名连接',
+      description: '只有明确希望替换已有连接时才勾选。',
       default: false,
     },
   },
@@ -87,8 +73,6 @@ const profileFormSchema = {
     'port',
     'username',
     'identityFilePath',
-    'remoteDirectory',
-    'deploymentCommand',
     'overwriteExisting',
   ],
 };
@@ -96,8 +80,8 @@ const profileFormSchema = {
 const tools = [
   {
     name: 'add_remote_server_connection',
-    title: '打开 SSH 部署档案编辑器',
-    description: 'Start the bundled interactive SSH deployment profile editor and open its randomized loopback URL in the system browser. This works without MCP elicitation and never reads private key contents.',
+    title: '添加 SSH 远程连接',
+    description: 'Start the bundled editor for a reusable SSH remote-server connection and open its randomized loopback URL in the system browser. The saved profile contains connection fields only, works without MCP elicitation, and never reads private key contents.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -133,8 +117,8 @@ const tools = [
   },
   {
     name: 'save_profile',
-    title: '保存 SSH 部署档案',
-    description: 'Validate and securely save fields submitted by the bundled profile editor. Accepts an absolute private-key path only, never private key contents.',
+    title: '保存 SSH 连接档案',
+    description: 'Validate and securely save reusable SSH connection fields submitted by the bundled editor. Commands and remote directories are task-specific and are not stored. Accepts an absolute private-key path only, never private key contents.',
     inputSchema: {
       ...profileFormSchema,
       additionalProperties: false,
@@ -183,8 +167,8 @@ const tools = [
   },
   {
     name: 'save_profile_with_form',
-    title: '打开 SSH 部署档案表单',
-    description: 'Open a native structured form, validate the submitted SSH deployment fields, and save the profile in the current user secure store. Never accepts private key contents.',
+    title: '打开 SSH 连接兼容表单',
+    description: 'Compatibility fallback that collects reusable SSH connection fields and saves them in the current user secure store. Never accepts private key contents.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -216,8 +200,8 @@ const tools = [
   },
   {
     name: 'list_profiles',
-    title: '列出 SSH 部署档案',
-    description: 'List the names of securely saved SSH deployment profiles without exposing private key contents.',
+    title: '列出 SSH 远程连接',
+    description: 'List the names of securely saved reusable SSH connections without exposing private key contents.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -296,8 +280,7 @@ function assertFormContent(content) {
     throw new Error('The submitted profile form is invalid.');
   }
   const expectedKeys = new Set([
-    'profileName', 'host', 'port', 'username', 'identityFilePath',
-    'remoteDirectory', 'deploymentCommand', 'overwriteExisting',
+    'profileName', 'host', 'port', 'username', 'identityFilePath', 'overwriteExisting',
   ]);
   for (const key of Object.keys(content)) {
     if (!expectedKeys.has(key)) {
@@ -306,7 +289,6 @@ function assertFormContent(content) {
   }
   for (const key of [
     'profileName', 'host', 'username', 'identityFilePath',
-    'remoteDirectory', 'deploymentCommand',
   ]) {
     if (typeof content[key] !== 'string' || content[key].length === 0) {
       throw new Error(`The submitted profile form field ${key} must be a non-empty string.`);
@@ -317,8 +299,6 @@ function assertFormContent(content) {
     host: 253,
     username: 64,
     identityFilePath: 1024,
-    remoteDirectory: 1024,
-    deploymentCommand: 4096,
   };
   for (const [key, maximum] of Object.entries(maximumLengths)) {
     if (content[key].length > maximum) {
@@ -505,8 +485,8 @@ async function openProfileEditor(argumentsValue) {
     content: [{
       type: 'text',
       text: browserOpened
-        ? `SSH deployment profile editor opened in the system browser at ${editorUrl}. Complete the form and choose Save profile.`
-        : `SSH deployment profile editor is ready at ${editorUrl}.`,
+        ? `SSH remote connection editor opened in the system browser at ${editorUrl}. Complete the form and choose Save connection.`
+        : `SSH remote connection editor is ready at ${editorUrl}.`,
     }],
     structuredContent: { suggestedProfileName, editorUrl, browserOpened },
     _meta: {
@@ -525,8 +505,6 @@ function saveProfile(content) {
     '-Port', String(content.port),
     '-Username', content.username,
     '-IdentityFilePath', content.identityFilePath,
-    '-RemoteDirectory', content.remoteDirectory,
-    '-DeploymentCommand', content.deploymentCommand,
   ];
   if (content.overwriteExisting) {
     args.push('-ConfirmOverwrite');
@@ -536,7 +514,7 @@ function saveProfile(content) {
   return {
     content: [{
       type: 'text',
-      text: `Saved SSH deployment profile "${saved.profileName}" in ${saved.storeBackend}.`,
+      text: `Saved SSH remote connection "${saved.profileName}" in ${saved.storeBackend}.`,
     }],
     structuredContent: {
       profileName: saved.profileName,
@@ -624,7 +602,7 @@ async function saveProfileWithForm(argumentsValue) {
 
   const response = await requestClient('elicitation/create', {
     mode: 'form',
-    message: '填写 SSH 部署档案。私钥字段只允许本机绝对路径，不要粘贴私钥正文。',
+    message: '填写 SSH 远程连接。私钥字段只允许本机绝对路径，不要粘贴私钥正文。',
     requestedSchema,
   });
 
@@ -639,7 +617,7 @@ async function saveProfileWithForm(argumentsValue) {
   }
   if (response.action === 'cancel') {
     return {
-      content: [{ type: 'text', text: 'SSH deployment profile form was cancelled; nothing was saved.' }],
+      content: [{ type: 'text', text: 'SSH connection profile form was cancelled; nothing was saved.' }],
     };
   }
   if (response.action !== 'accept') {
@@ -655,8 +633,8 @@ function listProfiles() {
     content: [{
       type: 'text',
       text: listed.profiles.length > 0
-        ? `Saved SSH deployment profiles: ${listed.profiles.join(', ')}`
-        : 'No SSH deployment profiles are saved.',
+        ? `Saved SSH remote connections: ${listed.profiles.join(', ')}`
+        : 'No SSH remote connections are saved.',
     }],
     structuredContent: {
       profiles: listed.profiles,
@@ -695,10 +673,10 @@ async function handleRequest(message) {
         capabilities: { tools: {}, resources: {} },
         serverInfo: {
           name: SERVER_NAME,
-          title: 'Local SSH Deploy',
+          title: 'Local SSH Remote',
           version: SERVER_VERSION,
         },
-        instructions: 'Treat requests such as "添加一个远程服务器连接" as requests for a reusable SSH deployment target unless the user explicitly says Codex remote worker or remote execution host. Use add_remote_server_connection for new or replacement profiles. It starts the bundled loopback editor and opens it in the system browser without MCP elicitation. Report an error if the call fails; do not claim success before it completes. Use save_profile_with_form only as a compatibility fallback. Never request private key contents.',
+        instructions: 'Treat requests such as "添加一个远程服务器连接" as requests for a reusable general-purpose SSH connection unless the user explicitly says Codex remote worker or remote execution host. Use add_remote_server_connection for new or replacement profiles. Store connection fields only; commands and directories belong to the later task. It starts the bundled loopback editor and opens it in the system browser without MCP elicitation. Report an error if the call fails; do not claim success before it completes. Use save_profile_with_form only as a compatibility fallback. Never request private key contents.',
       });
       return;
     case 'ping':
@@ -711,9 +689,9 @@ async function handleRequest(message) {
       sendResult(message.id, {
         resources: [{
           uri: PROFILE_EDITOR_URI,
-          name: 'SSH deployment profile editor',
-          title: 'SSH 部署档案',
-          description: 'Interactive editor for a securely stored SSH deployment profile.',
+          name: 'SSH remote connection editor',
+          title: 'SSH 远程连接',
+          description: 'Interactive editor for a securely stored reusable SSH connection.',
           mimeType: PROFILE_EDITOR_MIME_TYPE,
         }],
       });

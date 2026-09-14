@@ -324,7 +324,7 @@ function Read-PlatformSecret {
         return $null
     }
     if ($result.ExitCode -ne 0) {
-        throw "Linux Secret Service could not read the deployment profiles: $($result.Error.Trim())"
+        throw "Linux Secret Service could not read the SSH connection profiles: $($result.Error.Trim())"
     }
     return $result.Output.TrimEnd("`r", "`n")
 }
@@ -353,7 +353,7 @@ function Write-PlatformSecret {
         'application', 'openai-codex-local-ssh-deploy', 'item', 'profiles-v1'
     ) -StandardInput $Json
     if ($result.ExitCode -ne 0) {
-        throw "Linux Secret Service could not save the deployment profiles: $($result.Error.Trim())"
+        throw "Linux Secret Service could not save the SSH connection profiles: $($result.Error.Trim())"
     }
 }
 
@@ -462,8 +462,6 @@ function Resolve-ConnectionData {
         [Parameter(Mandatory = $true)][int] $Port,
         [Parameter(Mandatory = $true)][string] $Username,
         [Parameter(Mandatory = $true)][string] $IdentityFilePath,
-        [Parameter(Mandatory = $true)][string] $RemoteDirectory,
-        [Parameter(Mandatory = $true)][string] $DeploymentCommand,
         [string] $ProjectRoot
     )
 
@@ -473,9 +471,7 @@ function Resolve-ConnectionData {
     foreach ($field in @(
         @{ Name = 'HostName'; Value = $HostName },
         @{ Name = 'Username'; Value = $Username },
-        @{ Name = 'IdentityFilePath'; Value = $IdentityFilePath },
-        @{ Name = 'RemoteDirectory'; Value = $RemoteDirectory },
-        @{ Name = 'DeploymentCommand'; Value = $DeploymentCommand }
+        @{ Name = 'IdentityFilePath'; Value = $IdentityFilePath }
     )) {
         Assert-NoControlCharacters -Name $field.Name -Value $field.Value
     }
@@ -488,18 +484,6 @@ function Resolve-ConnectionData {
     }
     if ($Username -notmatch '^[A-Za-z_][A-Za-z0-9_.-]{0,63}$') {
         throw 'Username must start with a letter or underscore and contain only letters, digits, underscore, dot, or hyphen.'
-    }
-    if ($RemoteDirectory -notmatch '^/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$') {
-        throw 'RemoteDirectory must be a non-root absolute POSIX path using only letters, digits, dot, underscore, hyphen, and slash.'
-    }
-    if (($RemoteDirectory -split '/') | Where-Object { $_ -eq '.' -or $_ -eq '..' }) {
-        throw 'RemoteDirectory must not contain dot or dot-dot path segments.'
-    }
-    if ([string]::IsNullOrWhiteSpace($DeploymentCommand)) {
-        throw 'DeploymentCommand must be an explicit, non-empty command.'
-    }
-    if ($DeploymentCommand.Length -gt 4096) {
-        throw 'DeploymentCommand must not exceed 4096 characters.'
     }
     if (-not [System.IO.Path]::IsPathFullyQualified($IdentityFilePath)) {
         throw 'IdentityFilePath must be an absolute local filesystem path.'
@@ -526,8 +510,35 @@ function Resolve-ConnectionData {
         port = [int] $Port
         username = $Username
         identityFilePath = $resolvedIdentityPath
-        remoteDirectory = $RemoteDirectory
-        deploymentCommand = $DeploymentCommand
+    }
+}
+
+function Resolve-RemoteTaskData {
+    param(
+        [string] $WorkingDirectory,
+        [Parameter(Mandatory = $true)][string] $Command
+    )
+
+    Assert-NoControlCharacters -Name 'Command' -Value $Command
+    if ([string]::IsNullOrWhiteSpace($Command)) {
+        throw 'Command must be explicit and non-empty.'
+    }
+    if ($Command.Length -gt 4096) {
+        throw 'Command must not exceed 4096 characters.'
+    }
+    if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory)) {
+        Assert-NoControlCharacters -Name 'WorkingDirectory' -Value $WorkingDirectory
+        if ($WorkingDirectory -notmatch '^/(?:[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*)?$') {
+            throw 'WorkingDirectory must be an absolute POSIX path using only letters, digits, dot, underscore, hyphen, and slash.'
+        }
+        if (($WorkingDirectory -split '/') | Where-Object { $_ -eq '.' -or $_ -eq '..' }) {
+            throw 'WorkingDirectory must not contain dot or dot-dot path segments.'
+        }
+    }
+
+    return [ordered]@{
+        workingDirectory = if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) { $null } else { $WorkingDirectory }
+        command = $Command
     }
 }
 
@@ -543,9 +554,7 @@ function Save-DeploymentProfile {
         -HostName $ConnectionData.host `
         -Port $ConnectionData.port `
         -Username $ConnectionData.username `
-        -IdentityFilePath $ConnectionData.identityFilePath `
-        -RemoteDirectory $ConnectionData.remoteDirectory `
-        -DeploymentCommand $ConnectionData.deploymentCommand
+        -IdentityFilePath $ConnectionData.identityFilePath
     $document = Read-ProfileStore
     if ($document.profiles.Contains($ProfileName) -and -not $ConfirmOverwrite) {
         throw "Profile '$ProfileName' already exists. Obtain explicit confirmation and use -ConfirmOverwrite to replace it."
@@ -571,8 +580,6 @@ function Get-DeploymentProfile {
         -Port $profile.port `
         -Username $profile.username `
         -IdentityFilePath $profile.identityFilePath `
-        -RemoteDirectory $profile.remoteDirectory `
-        -DeploymentCommand $profile.deploymentCommand `
         -ProjectRoot $ProjectRoot
 }
 
@@ -602,6 +609,7 @@ function Remove-DeploymentProfile {
 Export-ModuleMember -Function @(
     'Get-ProfileStoreInfo',
     'Resolve-ConnectionData',
+    'Resolve-RemoteTaskData',
     'Save-DeploymentProfile',
     'Get-DeploymentProfile',
     'Get-DeploymentProfileNames',

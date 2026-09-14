@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SSH 部署档案</title>
+  <title>SSH 远程连接</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -184,13 +184,13 @@
 <body>
   <main>
     <header>
-      <h1>SSH 部署档案</h1>
-      <p class="lead">连接信息将保存到当前用户的系统安全存储。私钥只记录本机路径，不读取、不上传文件内容。</p>
+      <h1>SSH 远程连接</h1>
+      <p class="lead">保存一个可复用的 SSH 连接，用于远程命令、日志检查、服务管理、文件传输或项目发布。具体目录和命令在执行任务时再指定。</p>
     </header>
 
     <form id="profile-form">
       <div class="field">
-        <label for="profileName">档案名称</label>
+        <label for="profileName">连接名称</label>
         <input id="profileName" name="profileName" type="text" required maxlength="64" pattern="[A-Za-z][A-Za-z0-9._-]{0,63}" autocomplete="off" placeholder="production">
         <p class="hint">以后可用这个名字唤起；以字母开头，可包含字母、数字、点、下划线和连字符。</p>
       </div>
@@ -217,29 +217,17 @@
           <input id="identityFilePath" name="identityFilePath" type="text" required maxlength="1024" autocomplete="off" placeholder="C:\Users\name\.ssh\id_ed25519">
           <button id="pick-file" type="button">选择文件…</button>
         </div>
-        <p class="hint">可以手动填写或用系统文件选择器选取。私钥必须位于待部署项目之外。</p>
-      </div>
-
-      <div class="field">
-        <label for="remoteDirectory">远程目录</label>
-        <input id="remoteDirectory" name="remoteDirectory" type="text" required maxlength="1024" autocomplete="off" placeholder="/srv/www/example">
-        <p class="hint">填写非根 POSIX 绝对路径。</p>
-      </div>
-
-      <div class="field">
-        <label for="deploymentCommand">部署命令</label>
-        <textarea id="deploymentCommand" name="deploymentCommand" required maxlength="4096" placeholder="npm ci &amp;&amp; npm run build"></textarea>
-        <p class="hint">项目上传并解压后，在远程目录中运行的准确单行命令。</p>
+        <p class="hint">可以手动填写或用系统文件选择器选取。只保存路径，文件内容不会被读取或上传。</p>
       </div>
 
       <label class="checkbox" for="overwriteExisting">
         <input id="overwriteExisting" name="overwriteExisting" type="checkbox">
-        <span>覆盖同名档案<br><span class="hint">只有明确希望替换已有档案时才勾选。</span></span>
+        <span>覆盖同名连接<br><span class="hint">只有明确希望替换已有连接时才勾选。</span></span>
       </label>
 
       <div class="actions">
         <div id="status" role="status" aria-live="polite"></div>
-        <button id="save" class="primary" type="submit">保存档案</button>
+        <button id="save" class="primary" type="submit">保存连接</button>
       </div>
     </form>
   </main>
@@ -356,8 +344,6 @@
           port: Number(values.get('port')),
           username: String(values.get('username') || '').trim(),
           identityFilePath: String(values.get('identityFilePath') || '').trim(),
-          remoteDirectory: String(values.get('remoteDirectory') || '').trim(),
-          deploymentCommand: String(values.get('deploymentCommand') || '').trim(),
           overwriteExisting: values.get('overwriteExisting') === 'on',
         };
 
@@ -366,7 +352,7 @@
           const result = unwrapToolResult(raw);
           if (result?.isError) throw new Error(result.content?.[0]?.text || '保存失败。');
           const savedName = result?.structuredContent?.profileName || payload.profileName;
-          setStatus(`档案 ${savedName} 已安全保存。`, 'success');
+          setStatus(`连接 ${savedName} 已安全保存。`, 'success');
         } catch (error) {
           setStatus(error.message || '保存失败，请检查填写内容。', 'error');
         } finally {

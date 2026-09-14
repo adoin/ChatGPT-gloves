@@ -153,9 +153,10 @@ test('MCP server advertises the embedded editor and legacy form fallback', async
   assert.equal(elicitation.params.requestedSchema.properties.profileName.default, 'production');
   assert.equal(elicitation.params.requestedSchema.properties.identityFilePath.title, '本机私钥绝对路径');
   assert.deepEqual(elicitation.params.requestedSchema.required, [
-    'profileName', 'host', 'port', 'username', 'identityFilePath',
-    'remoteDirectory', 'deploymentCommand', 'overwriteExisting',
+    'profileName', 'host', 'port', 'username', 'identityFilePath', 'overwriteExisting',
   ]);
+  assert.equal(elicitation.params.requestedSchema.properties.remoteDirectory, undefined);
+  assert.equal(elicitation.params.requestedSchema.properties.deploymentCommand, undefined);
 
   client.send({
     jsonrpc: '2.0',
@@ -213,7 +214,7 @@ test('MCP App resource has the intended field order and a path-only picker', asy
   assert.equal(content._meta.ui.prefersBorder, true);
   assert.equal(content.text, fs.readFileSync(editorPath, 'utf8'));
   assert.ok(content.text.indexOf('name="profileName"') < content.text.indexOf('name="host"'));
-  assert.ok(content.text.indexOf('name="profileName"') < content.text.indexOf('name="deploymentCommand"'));
+  assert.doesNotMatch(content.text, /name="remoteDirectory"|name="deploymentCommand"/);
   assert.match(content.text, /id="pick-file"/);
   assert.match(content.text, /callTool\('pick_identity_file'/);
   assert.match(content.text, /location\.hostname === '127\.0\.0\.1'/);
@@ -292,8 +293,6 @@ test('accepted MCP form writes an encrypted profile without key contents', { ski
         port: 22,
         username: 'deploy',
         identityFilePath: item.identity,
-        remoteDirectory: '/srv/www/example',
-        deploymentCommand: 'npm ci && npm run build',
         overwriteExisting: false,
       },
     },
@@ -352,8 +351,6 @@ test('embedded editor can save directly in Full Access without elicitation', { s
         port: 22,
         username: 'deploy',
         identityFilePath: item.identity,
-        remoteDirectory: '/srv/www/example',
-        deploymentCommand: 'npm ci && npm run build',
         overwriteExisting: false,
       },
     },

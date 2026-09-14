@@ -33,6 +33,7 @@ function verify() {
         "scripts/deploy.ps1",
         "scripts/pick-identity-file.ps1",
         "scripts/profiles.ps1",
+        "scripts/remote.ps1",
         "skills/ssh-deploy/SKILL.md"
       ]
     }

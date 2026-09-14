@@ -16,10 +16,10 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = 'Direct')]
     [string] $IdentityFilePath,
 
-    [Parameter(Mandatory = $true, ParameterSetName = 'Direct')]
+    [Parameter(Mandatory = $true)]
     [string] $RemoteDirectory,
 
-    [Parameter(Mandatory = $true, ParameterSetName = 'Direct')]
+    [Parameter(Mandatory = $true)]
     [string] $DeploymentCommand,
 
     [switch] $DryRun,
@@ -62,6 +62,9 @@ if ($DryRun -and -not [string]::IsNullOrWhiteSpace($PlanHash)) {
 if ($ConfirmDeployment -and ($PlanHash -notmatch '^[A-Fa-f0-9]{64}$')) {
     throw 'Confirmed deployment requires the 64-character -PlanHash returned by the approved dry run.'
 }
+if ([string]::IsNullOrWhiteSpace($RemoteDirectory) -or $RemoteDirectory -eq '/') {
+    throw 'RemoteDirectory must be a non-root absolute POSIX path.'
+}
 
 $location = Get-Location
 if ($location.Provider.Name -ne 'FileSystem') {
@@ -92,10 +95,9 @@ else {
         -Port $Port `
         -Username $Username `
         -IdentityFilePath $IdentityFilePath `
-        -RemoteDirectory $RemoteDirectory `
-        -DeploymentCommand $DeploymentCommand `
         -ProjectRoot $projectRoot
 }
+$deployment = Resolve-RemoteTaskData -WorkingDirectory $RemoteDirectory -Command $DeploymentCommand
 
 $planData = [ordered]@{
     projectRoot = $projectRoot
@@ -104,8 +106,8 @@ $planData = [ordered]@{
     port = $connection.port
     username = $connection.username
     identityFilePath = $connection.identityFilePath
-    remoteDirectory = $connection.remoteDirectory
-    deploymentCommand = $connection.deploymentCommand
+    remoteDirectory = $deployment.workingDirectory
+    deploymentCommand = $deployment.command
     archiveExclusions = @('.git', '.codex')
     hostKeyChecking = 'strict; the host must already exist in known_hosts'
 }
@@ -146,12 +148,12 @@ $tarCommand = Get-Command $tarName -CommandType Application
 $nullConfigPath = if ($IsWindows) { 'NUL' } else { '/dev/null' }
 
 $uploadName = '.codex-deploy-' + [System.Guid]::NewGuid().ToString('N') + '.tar.gz'
-$remoteArchive = "$($connection.remoteDirectory)/$uploadName"
-$remoteDirectoryQuoted = ConvertTo-PosixSingleQuoted $connection.remoteDirectory
+$remoteArchive = "$($deployment.workingDirectory)/$uploadName"
+$remoteDirectoryQuoted = ConvertTo-PosixSingleQuoted $deployment.workingDirectory
 $remoteArchiveQuoted = ConvertTo-PosixSingleQuoted $remoteArchive
 $prepareScript = "mkdir -p -- $remoteDirectoryQuoted"
 $cleanupScript = "rm -f -- $remoteArchiveQuoted"
-$deployScript = "set -eu; trap $(ConvertTo-PosixSingleQuoted $cleanupScript) 0; tar -xzf $remoteArchiveQuoted -C $remoteDirectoryQuoted; cd -- $remoteDirectoryQuoted; $($connection.deploymentCommand)"
+$deployScript = "set -eu; trap $(ConvertTo-PosixSingleQuoted $cleanupScript) 0; tar -xzf $remoteArchiveQuoted -C $remoteDirectoryQuoted; cd -- $remoteDirectoryQuoted; $($deployment.command)"
 
 $commonOptions = @(
     '-F', $nullConfigPath,
@@ -193,4 +195,4 @@ finally {
     }
 }
 
-Write-Output "Deployment completed successfully for $($connection.username)@$($connection.host):$($connection.port)$($connection.remoteDirectory)."
+Write-Output "Deployment completed successfully for $($connection.username)@$($connection.host):$($connection.port)$($deployment.workingDirectory)."
