@@ -2,7 +2,7 @@
 
 `local-ssh-deploy` lets a local Codex agent remember deployment targets securely and publish the current project to a user-specified POSIX server through the machine's own OpenSSH tools. The server is only a deployment target; it is never configured as a remote Codex worker.
 
-Named profiles are created through the plugin's embedded HTML editor and remain independent of any conversation or project. The editor works in Full Access without MCP elicitation. The deployment workflow packages the current directory (excluding `.git` and `.codex`), uploads the archive with `scp`, extracts it into the requested remote directory, and runs one exact saved command. A hashed dry run and explicit confirmation are required before any network or remote mutation occurs.
+Named profiles are created through the plugin's HTML editor and remain independent of any conversation or project. The plugin serves the editor only on a randomized `127.0.0.1` URL and opens it in a dedicated browser window on Windows or the system browser on macOS and Linux; it also advertises the page as an MCP App resource for compatible clients. This works in Full Access without MCP elicitation or client-side component rendering. The deployment workflow packages the current directory (excluding `.git` and `.codex`), uploads the archive with `scp`, extracts it into the requested remote directory, and runs one exact saved command. A hashed dry run and explicit confirmation are required before any network or remote mutation occurs.
 
 ## Install
 
@@ -50,7 +50,7 @@ Ask Codex:
 $ssh-deploy 新增一个名为 production 的部署连接
 ```
 
-Codex calls the bundled `open_profile_editor` MCP tool and opens an interactive editor containing:
+Codex calls the bundled `open_profile_editor` MCP tool, which starts a randomized loopback URL and opens it in the system browser. The interactive editor contains:
 
 - profile name at the top;
 - host and port;

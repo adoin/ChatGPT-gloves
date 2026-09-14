@@ -3,8 +3,10 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
+const http = require('node:http');
+const crypto = require('node:crypto');
 const readline = require('node:readline');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 
 const SERVER_NAME = 'local-ssh-deploy';
 const SERVER_VERSION = '0.1.0';
@@ -17,6 +19,9 @@ const PROFILE_EDITOR_MIME_TYPE = 'text/html;profile=mcp-app';
 let clientCapabilities = {};
 let nextServerRequestId = 1;
 const pendingClientRequests = new Map();
+let editorHttpServer;
+let editorServerReady;
+const editorSessionToken = crypto.randomBytes(24).toString('hex');
 
 const profileFormSchema = {
   type: 'object',
@@ -92,7 +97,7 @@ const tools = [
   {
     name: 'open_profile_editor',
     title: '打开 SSH 部署档案编辑器',
-    description: 'Open the bundled interactive SSH deployment profile editor. This works without MCP elicitation and never reads private key contents.',
+    description: 'Start the bundled interactive SSH deployment profile editor and open its randomized loopback URL in the system browser. This works without MCP elicitation and never reads private key contents.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -109,8 +114,10 @@ const tools = [
       type: 'object',
       properties: {
         suggestedProfileName: { type: 'string' },
+        editorUrl: { type: 'string' },
+        browserOpened: { type: 'boolean' },
       },
-      required: ['suggestedProfileName'],
+      required: ['suggestedProfileName', 'editorUrl', 'browserOpened'],
       additionalProperties: false,
     },
     annotations: {
@@ -345,15 +352,163 @@ function validateSuggestedName(argumentsValue) {
   }
 }
 
-function openProfileEditor(argumentsValue) {
+function readJsonBody(request) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    request.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > 16 * 1024) {
+        reject(new Error('Request body exceeds 16 KiB.'));
+        request.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on('end', () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      } catch {
+        reject(new Error('Request body must be valid JSON.'));
+      }
+    });
+    request.on('error', reject);
+  });
+}
+
+function sendHttpJson(response, statusCode, body) {
+  const content = Buffer.from(JSON.stringify(body));
+  response.writeHead(statusCode, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': content.length,
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+  });
+  response.end(content);
+}
+
+async function handleEditorHttpRequest(request, response) {
+  const basePath = `/${editorSessionToken}/`;
+  const requestUrl = new URL(request.url || '/', 'http://127.0.0.1');
+  const address = editorHttpServer.address();
+  const expectedHost = `127.0.0.1:${address.port}`;
+  const expectedOrigin = `http://${expectedHost}`;
+  if (request.headers.host !== expectedHost
+      || (request.headers.origin && request.headers.origin !== expectedOrigin)) {
+    sendHttpJson(response, 403, { error: 'Loopback editor origin rejected.' });
+    return;
+  }
+  if (request.method === 'GET' && requestUrl.pathname === basePath) {
+    const content = Buffer.from(fs.readFileSync(profileEditorPath, 'utf8'));
+    response.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Content-Length': content.length,
+      'Cache-Control': 'no-store',
+      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'; frame-ancestors 'none'",
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'no-referrer',
+    });
+    response.end(content);
+    return;
+  }
+
+  if (request.method === 'POST' && requestUrl.pathname.startsWith(`${basePath}tool/`)) {
+    const toolName = requestUrl.pathname.slice(`${basePath}tool/`.length);
+    if (!['save_profile', 'pick_identity_file'].includes(toolName)) {
+      sendHttpJson(response, 404, { error: 'Unknown editor action.' });
+      return;
+    }
+    try {
+      const argumentsValue = await readJsonBody(request);
+      const result = toolName === 'save_profile'
+        ? saveProfile(argumentsValue)
+        : pickIdentityFile();
+      sendHttpJson(response, result.isError ? 400 : 200, result);
+    } catch (error) {
+      sendHttpJson(response, 400, {
+        content: [{ type: 'text', text: error.message }],
+        isError: true,
+      });
+    }
+    return;
+  }
+
+  sendHttpJson(response, 404, { error: 'Not found.' });
+}
+
+function ensureEditorServer() {
+  if (editorServerReady) {
+    return editorServerReady;
+  }
+  editorHttpServer = http.createServer((request, response) => {
+    handleEditorHttpRequest(request, response).catch((error) => {
+      sendHttpJson(response, 500, { error: error.message });
+    });
+  });
+  editorServerReady = new Promise((resolve, reject) => {
+    editorHttpServer.once('error', reject);
+    editorHttpServer.listen(0, '127.0.0.1', () => {
+      editorHttpServer.removeListener('error', reject);
+      const address = editorHttpServer.address();
+      resolve(`http://127.0.0.1:${address.port}/${editorSessionToken}/`);
+    });
+  });
+  return editorServerReady;
+}
+
+function openEditorInSystemBrowser(editorUrl) {
+  if (process.env.LOCAL_SSH_DEPLOY_SKIP_BROWSER_OPEN === '1') {
+    return Promise.resolve(false);
+  }
+  let launcher;
+  if (process.platform === 'win32') {
+    const edgeCandidates = [
+      process.env['ProgramFiles(x86)'],
+      process.env.ProgramFiles,
+    ].filter(Boolean).map((root) => path.join(root, 'Microsoft', 'Edge', 'Application', 'msedge.exe'));
+    const edgePath = edgeCandidates.find((candidate) => fs.existsSync(candidate));
+    launcher = edgePath
+      ? { command: edgePath, args: [`--app=${editorUrl}`, '--new-window', '--no-first-run'] }
+      : { command: 'explorer.exe', args: [editorUrl] };
+  } else {
+    launcher = process.platform === 'darwin'
+      ? { command: 'open', args: [editorUrl] }
+      : { command: 'xdg-open', args: [editorUrl] };
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(launcher.command, launcher.args, {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: false,
+    });
+    child.once('error', (error) => {
+      reject(new Error(`Could not open the system browser: ${error.message}`));
+    });
+    child.once('spawn', () => {
+      child.unref();
+      resolve(true);
+    });
+  });
+}
+
+async function openProfileEditor(argumentsValue) {
   validateSuggestedName(argumentsValue);
   const suggestedProfileName = argumentsValue.suggestedProfileName || '';
+  const baseEditorUrl = await ensureEditorServer();
+  const editorUrl = suggestedProfileName
+    ? `${baseEditorUrl}?suggestedProfileName=${encodeURIComponent(suggestedProfileName)}`
+    : baseEditorUrl;
+  const browserOpened = await openEditorInSystemBrowser(editorUrl);
   return {
     content: [{
       type: 'text',
-      text: 'SSH deployment profile editor opened. Complete the embedded form and choose Save profile.',
+      text: browserOpened
+        ? `SSH deployment profile editor opened in the system browser at ${editorUrl}. Complete the form and choose Save profile.`
+        : `SSH deployment profile editor is ready at ${editorUrl}.`,
     }],
-    structuredContent: { suggestedProfileName },
+    structuredContent: { suggestedProfileName, editorUrl, browserOpened },
     _meta: {
       ui: { resourceUri: PROFILE_EDITOR_URI },
       'openai/outputTemplate': PROFILE_EDITOR_URI,
@@ -543,7 +698,7 @@ async function handleRequest(message) {
           title: 'Local SSH Deploy',
           version: SERVER_VERSION,
         },
-        instructions: 'Use open_profile_editor for new or replacement profiles so the user receives the bundled interactive editor. Use save_profile_with_form only as a compatibility fallback. Never request private key contents.',
+        instructions: 'Use open_profile_editor for new or replacement profiles. It starts the bundled loopback editor and opens it in the system browser without MCP elicitation. Report an error if the call fails; do not claim success before it completes. Use save_profile_with_form only as a compatibility fallback. Never request private key contents.',
       });
       return;
     case 'ping':
@@ -638,4 +793,7 @@ input.on('close', () => {
     pending.reject(new Error('MCP client disconnected.'));
   }
   pendingClientRequests.clear();
+  if (editorHttpServer) {
+    editorHttpServer.close();
+  }
 });

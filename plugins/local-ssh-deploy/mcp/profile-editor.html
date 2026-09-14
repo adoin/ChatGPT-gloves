@@ -281,6 +281,18 @@
       }
 
       async function callTool(name, args) {
+        if (location.protocol === 'http:' && location.hostname === '127.0.0.1') {
+          const response = await fetch(`tool/${name}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(args),
+          });
+          const result = await response.json();
+          if (!response.ok && !result?.isError) {
+            throw new Error(result?.error || 'Local editor request failed.');
+          }
+          return result;
+        }
         if (window.openai && typeof window.openai.callTool === 'function') {
           return window.openai.callTool(name, args);
         }
@@ -305,6 +317,9 @@
       });
 
       applyToolInput(window.openai?.toolInput);
+      applyToolInput({
+        suggestedProfileName: new URLSearchParams(location.search).get('suggestedProfileName') || '',
+      });
 
       pickButton.addEventListener('click', async () => {
         pickButton.disabled = true;

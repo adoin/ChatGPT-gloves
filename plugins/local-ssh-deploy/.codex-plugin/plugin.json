@@ -1,6 +1,6 @@
 {
   "name": "local-ssh-deploy",
-  "version": "0.1.0+codex.20260914022703",
+  "version": "0.1.0+codex.20260914024608",
   "description": "Persist encrypted SSH deployment profiles through an embedded editor and publish local projects with confirmation-gated SSH deployment.",
   "author": {
     "name": "adoin",

@@ -28,7 +28,11 @@ function fixture() {
 function startServer(item) {
   const child = spawn(process.execPath, [serverPath], {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, LOCALAPPDATA: item.localAppData },
+    env: {
+      ...process.env,
+      LOCALAPPDATA: item.localAppData,
+      LOCAL_SSH_DEPLOY_SKIP_BROWSER_OPEN: '1',
+    },
     windowsHide: true,
   });
   const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
@@ -132,6 +136,7 @@ test('MCP server advertises the embedded editor and legacy form fallback', async
   const editorTool = listed.result.tools.find((tool) => tool.name === 'open_profile_editor');
   assert.equal(editorTool._meta.ui.resourceUri, editorUri);
   assert.equal(editorTool._meta['openai/outputTemplate'], editorUri);
+  assert.match(editorTool.description, /system browser/);
 
   client.send({
     jsonrpc: '2.0',
@@ -211,6 +216,7 @@ test('MCP App resource has the intended field order and a path-only picker', asy
   assert.ok(content.text.indexOf('name="profileName"') < content.text.indexOf('name="deploymentCommand"'));
   assert.match(content.text, /id="pick-file"/);
   assert.match(content.text, /callTool\('pick_identity_file'/);
+  assert.match(content.text, /location\.hostname === '127\.0\.0\.1'/);
   assert.doesNotMatch(content.text, /type="file"/);
   assert.doesNotMatch(content.text, /selectFiles|uploadFile/);
 
@@ -222,7 +228,28 @@ test('MCP App resource has the intended field order and a path-only picker', asy
   });
   const opened = await client.receive();
   assert.equal(opened.result.structuredContent.suggestedProfileName, 'production');
+  assert.equal(opened.result.structuredContent.browserOpened, false);
+  assert.match(opened.result.structuredContent.editorUrl, /^http:\/\/127\.0\.0\.1:\d+\/[a-f0-9]{48}\/?\?suggestedProfileName=production$/);
   assert.equal(opened.result._meta.ui.resourceUri, editorUri);
+
+  const editorResponse = await fetch(opened.result.structuredContent.editorUrl);
+  assert.equal(editorResponse.status, 200);
+  assert.match(editorResponse.headers.get('content-security-policy'), /default-src 'none'/);
+  assert.equal(editorResponse.headers.get('cache-control'), 'no-store');
+  const editorHtml = await editorResponse.text();
+  assert.equal(editorHtml, fs.readFileSync(editorPath, 'utf8'));
+
+  const unknownAction = await fetch(new URL('tool/not_allowed', opened.result.structuredContent.editorUrl), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  assert.equal(unknownAction.status, 404);
+
+  const wrongOrigin = await fetch(opened.result.structuredContent.editorUrl, {
+    headers: { Origin: 'https://attacker.example' },
+  });
+  assert.equal(wrongOrigin.status, 403);
 });
 
 test('Windows picker asks for a path without reading the selected file', { skip: process.platform !== 'win32' }, () => {

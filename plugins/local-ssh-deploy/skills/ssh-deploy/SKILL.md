@@ -19,7 +19,7 @@ Use the bundled `open_profile_editor` MCP tool to collect and save named deploym
 ## Workflow
 
 1. When the user refers to an existing server or asks what is remembered, call `list_profiles`. Do not search projects or conversation history for connection data.
-2. When the user asks to add, configure, save, or replace a connection, call `open_profile_editor` immediately. It renders through an MCP App resource and works in Full Access because it does not use MCP elicitation. Pass a suggested profile name only when the user already supplied one. Do not ask the user to paste a field template into chat.
+2. When the user asks to add, configure, save, or replace a connection, call `open_profile_editor` immediately. Pass a suggested profile name only when the user already supplied one. The tool serves the bundled editor on a randomized loopback-only URL and opens it in the system browser, so it works in Full Access without MCP elicitation or client-side MCP App rendering. It also advertises the same HTML as an MCP App resource for compatible clients. Do not ask the user to paste a field template into chat, and do not claim the browser opened before the tool completes successfully.
 3. The editor places the profile name first and collects the six allowed fields. Its private-key field accepts manual absolute-path entry or calls `pick_identity_file` to open the operating system picker. The picker returns only the chosen path; never use ChatGPT file upload or a browser file input for a private key.
 4. The remote directory must be a non-root absolute POSIX path using only letters, digits, `.`, `_`, `-`, and `/`. The `save_profile` MCP tool and storage script validate submitted values again before saving. Use `save_profile_with_form` only as a compatibility fallback for a client that cannot render the bundled MCP App and supports MCP elicitation.
 5. Replacing an existing profile requires the user to select the form's explicit overwrite control. Deleting one still requires explicit confirmation and `profiles.ps1 -Delete -ConfirmDelete`.
@@ -34,7 +34,7 @@ For ordinary profile creation, the user only needs to say something like:
 新增一个名为 production 的部署连接
 ```
 
-The tool must open the bundled editor. If the editor tool is unavailable, stop and report that the bundled MCP server did not load; do not silently downgrade to terminal data entry. Use `scripts/profiles.ps1` directly only when the user explicitly requests a terminal workflow after being told the editor is unavailable. Deployment still uses PowerShell 7 with separate parameters:
+The tool must start the bundled editor and open its returned loopback URL in the system browser. If either step is unavailable, stop and report the exact failure; do not silently downgrade to terminal data entry. Use `scripts/profiles.ps1` directly only when the user explicitly requests a terminal workflow after being told the editor is unavailable. Deployment still uses PowerShell 7 with separate parameters:
 
 ```powershell
 pwsh -NoLogo -NoProfile -File <plugin-root>/scripts/deploy.ps1 `
