@@ -1,6 +1,6 @@
 {
   "name": "conversation-lifeboat",
-  "version": "0.2.1+codex.20260907073137",
+  "version": "0.2.1+codex.20260916063907",
   "description": "Maintain durable project specifications, detect overloaded Codex conversations, and hand work off safely when requested.",
   "author": {
     "name": "adoin",
@@ -19,17 +19,17 @@
   "interface": {
     "displayName": "Conversation Lifeboat",
     "shortDescription": "Keep project specs current and move overloaded tasks safely.",
-    "longDescription": "Maintains active project specifications and their prohibited, implemented, and superseded states without leaving the current task, while also monitoring transcript pressure and providing a confirmation-gated handoff into a fresh task.",
+    "longDescription": "Maintains durable project specifications and their prohibited, implemented, and superseded states while keeping transient continuation state in a confirmation-gated fresh-task prompt that preserves the user's language.",
     "developerName": "adoin",
     "category": "Productivity",
     "capabilities": [
       "Conversation health monitoring",
       "Specification lifecycle updates",
-      "Specification handoff"
+      "Language-preserving task handoff"
     ],
     "defaultPrompt": [
       "Assess this task and prepare a safe handoff if it is overloaded.",
-      "Preserve this conversation in a spec and continue in a fresh task.",
+      "Update durable project specs and continue transient task state in a fresh task prompt without translating my requirements.",
       "Update the current project specification without creating a new task."
     ],
     "brandColor": "#FF5A1F",

@@ -16,9 +16,9 @@ const config = {
   warnBytes: numberFromEnv('CONVERSATION_LIFEBOAT_WARN_MIB', 512) * MIB,
   recommendBytes: numberFromEnv('CONVERSATION_LIFEBOAT_RECOMMEND_MIB', 2048) * MIB,
   criticalBytes: numberFromEnv('CONVERSATION_LIFEBOAT_CRITICAL_MIB', 5120) * MIB,
-  warnContextRatio: numberFromEnv('CONVERSATION_LIFEBOAT_WARN_CONTEXT_RATIO', 0.6),
-  recommendContextRatio: numberFromEnv('CONVERSATION_LIFEBOAT_RECOMMEND_CONTEXT_RATIO', 0.8),
-  criticalContextRatio: numberFromEnv('CONVERSATION_LIFEBOAT_CRITICAL_CONTEXT_RATIO', 0.9),
+  warnContextRatio: numberFromEnv('CONVERSATION_LIFEBOAT_WARN_CONTEXT_RATIO', 0.8),
+  recommendContextRatio: numberFromEnv('CONVERSATION_LIFEBOAT_RECOMMEND_CONTEXT_RATIO', 0.85),
+  criticalContextRatio: numberFromEnv('CONVERSATION_LIFEBOAT_CRITICAL_CONTEXT_RATIO', 0.92),
   compactionWindowMs: numberFromEnv('CONVERSATION_LIFEBOAT_COMPACTION_WINDOW_HOURS', 24) * 60 * 60 * 1000,
   recommendCompactions: numberFromEnv('CONVERSATION_LIFEBOAT_RECOMMEND_COMPACTIONS', 4),
   tailBytes: numberFromEnv('CONVERSATION_LIFEBOAT_TAIL_MIB', 8) * MIB,
@@ -175,7 +175,8 @@ function migrationContext(summary, pending) {
     `Conversation Lifeboat reports ${summary}.`,
     pending
       ? 'A migration offer is pending. Interpret the current user prompt in conversation context. If it explicitly confirms migration, invoke $conversation-handoff now; otherwise do not migrate.'
-      : 'Before continuing substantial implementation, tell the user that this task is large enough to impair reliability or responsiveness and ask whether to create a durable handoff specification and continue in a fresh task.',
+      : 'Before continuing substantial implementation, tell the user that this task is large enough to impair reliability or responsiveness and ask whether to update durable project specifications, carry the current execution state in a language-preserving starter prompt, and continue in a fresh task.',
+    'Use the same language as the current user prompt and preserve user-authored requirement text verbatim.',
     'Do not create a new task, modify project specifications, or archive this task without explicit user confirmation.',
   ].join(' ');
 }

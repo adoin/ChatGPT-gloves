@@ -8,11 +8,11 @@ Local SSH Deploy opens a native form and securely persists named deployment prof
 
 ## Conversation Lifeboat
 
-Conversation Lifeboat watches transcript size, effective context pressure, and repeated compaction. At serious thresholds it asks the user whether to preserve the current implementation state in a project specification and continue in a fresh task.
+Conversation Lifeboat watches transcript size, effective context pressure, and repeated compaction. At serious thresholds it asks the user whether to update durable project specifications and continue transient execution state in a fresh-task prompt.
 
 The plugin contains:
 
-- `conversation-handoff`: a confirmation-gated Skill that extracts specification-owned detail from applicable `AGENTS.md` files, writes a durable active specification, and starts or prepares a fresh task.
+- `conversation-handoff`: a confirmation-gated Skill that updates durable specifications, preserves the user's original wording and language, and carries working-tree state, remaining work, validation, and the next action only in the fresh-task starter prompt.
 - `spec-update`: an in-place Skill that extracts specification-owned detail from applicable `AGENTS.md` files and updates the current specification without creating a new task. A single update reconciles active requirements, newly evidenced prohibited approaches, verified implemented specifications, and deliberately superseded specifications.
 - Lifecycle hooks for `SessionStart`, `PostCompact`, and `UserPromptSubmit`.
 - A dependency-free Node.js monitor that reads only a bounded transcript tail, even when the JSONL is many gigabytes.
@@ -45,12 +45,12 @@ You do not need to wait for a conversation-health warning.
 
 ```text
 $spec-update Refresh the current specification without creating a new task.
-$conversation-handoff Preserve the current state in a specification and continue in a fresh task.
+$conversation-handoff Update durable specifications and continue task-specific state in a fresh prompt without translating the user's requirements.
 ```
 
 In ChatGPT, type `@` and select **Specification Update** or **Conversation Handoff**. `spec-update` never creates, forks, archives, or switches tasks. During one update it may:
 
-- move module requirements, implementation state, decisions, and evidenced prohibitions out of `AGENTS.md` into their authoritative lifecycle documents while leaving cross-task rules and specification entry links behind;
+- move module requirements, approved project-level TODOs, durable decisions, and evidenced prohibitions out of `AGENTS.md` into their authoritative lifecycle documents while leaving transient continuation state, cross-task rules, and specification entry links in their proper places;
 - keep approved unfinished requirements under `.agents/notes/active/`;
 - record evidenced failed or forbidden approaches under `.agents/notes/prohibited/`;
 - move completed and verified specifications to `.agents/notes/implemented/`;
@@ -69,9 +69,9 @@ Defaults can be overridden through environment variables before Codex starts:
 | `CONVERSATION_LIFEBOAT_WARN_MIB` | `512` | Show a low-frequency size warning |
 | `CONVERSATION_LIFEBOAT_RECOMMEND_MIB` | `2048` | Recommend a fresh-task handoff |
 | `CONVERSATION_LIFEBOAT_CRITICAL_MIB` | `5120` | Treat the transcript as critical |
-| `CONVERSATION_LIFEBOAT_WARN_CONTEXT_RATIO` | `0.6` | Context warning ratio |
-| `CONVERSATION_LIFEBOAT_RECOMMEND_CONTEXT_RATIO` | `0.8` | Context migration ratio |
-| `CONVERSATION_LIFEBOAT_CRITICAL_CONTEXT_RATIO` | `0.9` | Critical context ratio |
+| `CONVERSATION_LIFEBOAT_WARN_CONTEXT_RATIO` | `0.8` | Non-blocking context warning ratio |
+| `CONVERSATION_LIFEBOAT_RECOMMEND_CONTEXT_RATIO` | `0.85` | Context migration ratio |
+| `CONVERSATION_LIFEBOAT_CRITICAL_CONTEXT_RATIO` | `0.92` | Critical context ratio |
 | `CONVERSATION_LIFEBOAT_RECOMMEND_COMPACTIONS` | `4` | Compactions within the monitoring window before recommending migration |
 | `CONVERSATION_LIFEBOAT_COMPACTION_WINDOW_HOURS` | `24` | Compaction monitoring window |
 | `CONVERSATION_LIFEBOAT_TAIL_MIB` | `8` | Maximum transcript tail read per check |

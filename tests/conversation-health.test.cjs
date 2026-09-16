@@ -50,7 +50,33 @@ test('warns without requesting migration at the warning threshold', (t) => {
   assert.equal(output.hookSpecificOutput, undefined);
 });
 
-test('recommends migration when effective context crosses the threshold', (t) => {
+test('warns without requesting migration at 80 percent context', (t) => {
+  const tokenEvent = {
+    type: 'event_msg',
+    payload: {
+      type: 'token_count',
+      info: {
+        last_token_usage: { input_tokens: 80 },
+        model_context_window: 100,
+      },
+    },
+  };
+  const item = fixture([JSON.stringify(tokenEvent)]);
+  t.after(() => fs.rmSync(item.root, { recursive: true, force: true }));
+  const output = run(
+    {
+      session_id: 'context-warning-session',
+      transcript_path: item.transcript,
+      hook_event_name: 'UserPromptSubmit',
+      prompt: 'continue implementation',
+    },
+    item.data,
+  );
+  assert.match(output.systemMessage, /warning:/);
+  assert.equal(output.hookSpecificOutput, undefined);
+});
+
+test('recommends migration at 85 percent context', (t) => {
   const tokenEvent = {
     type: 'event_msg',
     payload: {
@@ -65,7 +91,7 @@ test('recommends migration when effective context crosses the threshold', (t) =>
   t.after(() => fs.rmSync(item.root, { recursive: true, force: true }));
   const output = run(
     {
-      session_id: 'context-session',
+      session_id: 'context-recommend-session',
       transcript_path: item.transcript,
       hook_event_name: 'UserPromptSubmit',
       prompt: 'continue implementation',
@@ -73,7 +99,7 @@ test('recommends migration when effective context crosses the threshold', (t) =>
     item.data,
   );
   assert.match(output.systemMessage, /recommend:/);
-  assert.match(output.hookSpecificOutput.additionalContext, /ask whether to create a durable handoff/i);
+  assert.match(output.hookSpecificOutput.additionalContext, /ask whether to update durable project specifications/i);
 });
 
 test('counts distinct compactions and routes explicit confirmation to the skill', (t) => {

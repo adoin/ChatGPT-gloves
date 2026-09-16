@@ -5,7 +5,7 @@ description: Update repository-owned project specifications at any time without 
 
 # Specification Update
 
-Reconcile durable project specifications with the observed implementation state while remaining in the current task. Never create, fork, archive, navigate to, or switch tasks as part of this skill.
+Reconcile durable project specifications with user-approved project intent while remaining in the current task. Never create, fork, archive, navigate to, or switch tasks as part of this skill.
 
 ## Authorization boundary
 
@@ -18,17 +18,19 @@ Reconcile durable project specifications with the observed implementation state 
 
 1. Identify the repository root, current branch, working-tree state, applicable `AGENTS.md` files, and the specification convention already in use.
 2. Read [the shared specification lifecycle](../conversation-handoff/references/spec-lifecycle.md) and [the update formats](references/spec-update-formats.md). Preserve an equally explicit repository convention when one already exists.
-3. Inspect every applicable `AGENTS.md`, the current specifications, relevant code and diffs, recent decisions, and recorded verification. Prefer observed repository state over stale narrative.
-4. Reconcile every applicable `AGENTS.md` using the extraction rules in the shared lifecycle reference. Classify its substantive content, move specification-owned material to the smallest appropriate lifecycle document, and replace migrated detail with concise specification entry links. Do not remove a statement until its destination exists and preserves the statement's force and scope.
-5. Reconcile the lifecycle as one specification update:
+3. Determine the language of the user's current request. Preserve copied user requirements verbatim and write the specification update in that language unless the user or an established repository convention explicitly requires another language.
+4. Inspect every applicable `AGENTS.md`, the current specifications, relevant code and diffs, recent decisions, and recorded verification. Prefer observed repository state over stale narrative.
+5. Reconcile every applicable `AGENTS.md` using the extraction rules in the shared lifecycle reference. Classify its substantive content, move specification-owned material to the smallest appropriate lifecycle document, and replace migrated detail with concise specification entry links. Do not remove a statement until its destination exists and preserves the statement's force and scope.
+6. Reconcile the lifecycle as one specification update:
    - Create or update the smallest useful specification under `active/` for requirements that remain approved and incomplete.
    - Add a focused note under `prohibited/` for each newly evidenced failed, unsafe, wasteful, or forbidden implementation. Link it from every active specification it constrains.
    - Move an active specification to `implemented/` only when all of its required work is complete and its relevant verification has passed. Update its status metadata before moving it.
    - Move an active specification to `superseded/` when a newer specification deliberately replaces it. Cross-link both documents with `supersedes` and `superseded_by` metadata.
-6. Treat an existing `rejected/` directory as a legacy prohibited source. Read and enforce it, but do not silently rename or move its contents.
-7. Leave each applicable `AGENTS.md` as a compact instruction and navigation layer: retain durable cross-task rules and material that no specification covers, plus links telling future agents where to read active and prohibited specifications. Do not duplicate specification detail there.
-8. Verify the result against the working tree. Confirm that migrated instructions remain discoverable with unchanged scope, current requirements remain discoverable, completion claims have evidence, replacement links resolve, and prohibited approaches include a safe alternative or reopening condition.
-9. Report which files were created, updated, or moved and why, including what was extracted from each `AGENTS.md`. State verification that was not run. Remain in the current task.
+7. Preserve approved project-level unfinished outcomes and TODOs in `active/`, but remove transient handoff material: source task IDs, branch dirtiness, recent command logs, the current interruption point, open execution questions, and immediate next actions. Report current task state to the user instead of persisting it as project intent.
+8. Treat an existing `rejected/` directory as a legacy prohibited source. Read and enforce it, but do not silently rename or move its contents.
+9. Leave each applicable `AGENTS.md` as a compact instruction and navigation layer: retain durable cross-task rules and material that no specification covers, plus links telling future agents where to read active and prohibited specifications. Do not duplicate specification detail there.
+10. Verify the result against the working tree. Confirm that migrated instructions remain discoverable with unchanged scope, current requirements remain discoverable, copied user text retains its language, completion claims have evidence, replacement links resolve, and prohibited approaches include a safe alternative or reopening condition.
+11. Report which files were created, updated, or moved and why, including what was extracted from each `AGENTS.md`. State verification that was not run. Remain in the current task.
 
 ## Classification rules
 

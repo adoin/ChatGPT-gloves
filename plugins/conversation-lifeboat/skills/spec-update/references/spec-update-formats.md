@@ -15,7 +15,7 @@ supersedes: []
 ---
 ```
 
-Keep confirmed requirements, observed implementation state, decisions, verification, prohibited constraints, remaining work, and the next action current. Do not duplicate logs or large diffs.
+Keep the project's purpose, verbatim user requirements, confirmed contract, acceptance criteria, durable architecture decisions, stable source map, approved project-level TODOs, and prohibited constraints current. Do not store task IDs, working-tree state, recent command logs, the current interruption point, open execution questions, or an immediate next action. Preserve copied user text in its original language.
 
 ## Implemented specification
 
@@ -23,8 +23,8 @@ Before moving the existing document from `active/` to `implemented/`:
 
 - set `status: implemented`;
 - add `completed_at: <ISO date>`;
-- record the verification supporting completion;
-- remove or resolve remaining work and material open questions.
+- record concise evidence supporting the durable completion claim;
+- confirm that every acceptance criterion is satisfied.
 
 Do not create a second copy. Move the updated document so there is one authoritative lifecycle state.
 

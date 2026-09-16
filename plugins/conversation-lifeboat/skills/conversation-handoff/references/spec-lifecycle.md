@@ -14,7 +14,7 @@ Use the repository's existing convention when it is equally explicit. Otherwise 
 ## Meanings
 
 - `proposed/`: Unapproved ideas. They may be evaluated but must not be implemented as accepted requirements.
-- `active/`: User-approved specifications currently guiding implementation. A conversation handoff belongs here.
+- `active/`: User-approved durable project specifications and project-level TODOs that remain incomplete or ongoing. A conversation handoff updates these specifications but is not itself a specification kind.
 - `implemented/`: Specifications whose required work and relevant verification are complete.
 - `prohibited/`: Failed, unsafe, wasteful, or explicitly forbidden approaches that must not be repeated without the user reopening the decision.
 - `superseded/`: Specifications that were once valid but were replaced by a newer specification. This is optional.
@@ -33,7 +33,7 @@ Classify each substantive statement before editing it:
 
 - Keep repository-wide working agreements, safety boundaries, build or verification commands, coding conventions, and other durable instructions that apply across multiple specifications or future tasks.
 - Keep a requirement or constraint that no durable specification currently covers. Do not discard it merely to make `AGENTS.md` shorter.
-- Move approved but unfinished module behavior, acceptance criteria, implementation decisions, observed state, remaining work, and next actions to the smallest relevant document under `active/`.
+- Move approved but unfinished project goals or module behavior, acceptance criteria, durable TODOs, and durable implementation decisions to the smallest relevant document under `active/`.
 - Move verified completed requirements to `implemented/`, but only with the completion evidence required by this lifecycle.
 - Move deliberately replaced requirements or decisions to `superseded/` and create the required replacement links.
 - Move evidenced failed, unsafe, wasteful, foolish, or explicitly forbidden approaches to focused notes under `prohibited/`. Preserve their mandatory force; do not soften them into background context.
@@ -56,6 +56,14 @@ After reconciliation, an applicable `AGENTS.md` should contain only:
 - a concise specification entry section that points to the lifecycle directories and tells agents which governing documents must be read.
 
 Do not keep summaries of migrated module specifications in `AGENTS.md`; the links and reading contract are the entry point. Do not create an empty specification solely to remove useful instructions from `AGENTS.md`.
+
+## Keep task state out of project specifications
+
+Project specifications must remain useful after the current conversation, branch state, and next task have changed. Keep approved project-level unfinished outcomes and TODOs in `active/`, but do not store source task IDs, working-tree dirtiness, recent command logs, the current interruption point, open execution questions, or an immediate next action there. During a conversation handoff, put those transient details in the fresh task's starter prompt. During an in-place specification update, report them to the user without persisting them unless they establish a durable requirement, project TODO, verified contract, or prohibited approach.
+
+## Preserve the user's language
+
+When a specification originates from user-authored requirements, keep copied text verbatim in its original language. Write generated headings and explanations in the language of the current user request unless the user or an established repository convention explicitly requires another language. Never translate user requirements merely to make the specification internally uniform.
 
 ## Suggested `AGENTS.md` entry contract
 

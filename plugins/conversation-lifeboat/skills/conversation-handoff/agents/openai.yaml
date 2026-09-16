@@ -1,7 +1,7 @@
 interface:
   display_name: "Conversation Handoff"
-  short_description: "Move overloaded tasks into clean, durable handoffs."
-  default_prompt: "Use $conversation-handoff to preserve this task in a specification and continue safely in a fresh task."
+  short_description: "Keep durable specs; move task state in the prompt."
+  default_prompt: "Use $conversation-handoff to update durable project specifications and continue the current execution state in a fresh task prompt without translating my requirements."
 
 policy:
   allow_implicit_invocation: true
