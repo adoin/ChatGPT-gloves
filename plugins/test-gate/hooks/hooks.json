@@ -1,0 +1,18 @@
+{
+  "description": "Keep non-interactive automated tests out of Codex turns while preserving interactive browser and UI verification.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"require(require('node:path').join(process.env.PLUGIN_ROOT,'scripts','pre-tool-use.cjs'))\"",
+            "timeout": 5,
+            "statusMessage": "Checking for deferred non-interactive tests"
+          }
+        ]
+      }
+    ]
+  }
+}

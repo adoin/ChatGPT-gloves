@@ -32,6 +32,20 @@ function verify() {
         "scripts/pick-identity-file.ps1",
         "skills/ssh-remote/SKILL.md"
       ]
+    },
+    {
+      name: "test-gate",
+      files: [
+        ".mcp.json",
+        "README.md",
+        "hooks/hooks.json",
+        "mcp/server.cjs",
+        "mcp/test-gate.html",
+        "scripts/pre-tool-use.cjs",
+        "scripts/run-job.cjs",
+        "scripts/test-gate-core.cjs",
+        "skills/test-gate/SKILL.md"
+      ]
     }
   ];
 

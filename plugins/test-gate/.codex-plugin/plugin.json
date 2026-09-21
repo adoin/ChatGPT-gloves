@@ -1,0 +1,41 @@
+{
+  "name": "test-gate",
+  "version": "0.1.0",
+  "description": "Run non-interactive tests outside Codex turns without model polling.",
+  "author": {
+    "name": "adoin",
+    "url": "https://github.com/adoin"
+  },
+  "homepage": "https://github.com/adoin/ChatGPT-gloves/tree/main/plugins/test-gate",
+  "repository": "https://github.com/adoin/ChatGPT-gloves",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "testing",
+    "async",
+    "hooks",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Test Gate",
+    "shortDescription": "Run automated tests without model polling.",
+    "longDescription": "Blocks only non-interactive automated test commands launched by Codex and hands them to a detached local runner with an embedded or browser-based dashboard. Interactive browser, screenshot, and UI verification remains available.",
+    "developerName": "adoin",
+    "category": "Productivity",
+    "capabilities": [
+      "Non-interactive test guard",
+      "Detached local test runner",
+      "Embedded test dashboard",
+      "Zero-model-polling status",
+      "One-click result copy"
+    ],
+    "defaultPrompt": [
+      "Open Test Gate for this project.",
+      "Defer this project's automated tests to Test Gate.",
+      "Analyze a completed Test Gate job."
+    ],
+    "brandColor": "#0B6B57"
+  },
+  "mcpServers": "./.mcp.json"
+}

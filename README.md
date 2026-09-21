@@ -2,6 +2,10 @@
 
 Reusable Codex plugins and skills.
 
+## Test Gate
+
+Test Gate prevents Codex from running or polling non-interactive automated tests, benchmarks, E2E suites, and acceptance suites. It hands those commands to a detached local runner with an embedded MCP UI and loopback browser fallback. Interactive browser work, screenshots, visual inspection, development servers, builds, linting, and type checking remain available. See the [plugin guide](plugins/test-gate/README.md) for suite discovery and project configuration.
+
 ## Local SSH Deploy
 
 Local SSH Deploy opens a native form and securely persists named deployment profiles in Windows DPAPI, macOS Keychain, or Linux Secret Service, independently of conversations and projects. It publishes the current local project using the machine's own `ssh`, `scp`, and `tar`, requires confirmation of a hashed dry run, stores only an absolute private-key path, and never reads or stores private key contents. See the [plugin guide](plugins/local-ssh-deploy/README.md) for prerequisites and usage.
@@ -35,7 +39,7 @@ The equivalent Codex command is:
 codex plugin marketplace add https://github.com/adoin/ChatGPT-gloves
 ```
 
-Open `/plugins`, select the `chatgpt-gloves` marketplace, and install `conversation-lifeboat` or `local-ssh-deploy`. Review and trust the Conversation Lifeboat hook definition when Codex prompts you; installing a plugin does not silently trust executable hooks.
+Open `/plugins`, select the `chatgpt-gloves` marketplace, and install `conversation-lifeboat`, `local-ssh-deploy`, or `test-gate`. Review and trust bundled hook definitions when Codex prompts you; installing a plugin does not silently trust executable hooks.
 
 Node.js must be available on `PATH` for the hook process. No npm dependencies are required.
 
