@@ -196,6 +196,43 @@
       content: "";
     }
 
+    .gate-banner {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 13px;
+      align-items: center;
+      margin-bottom: 20px;
+      padding: 15px 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--paper);
+      box-shadow: 0 7px 22px rgba(35, 43, 39, 0.045);
+    }
+
+    .gate-banner.pending, .gate-banner.running { border-color: color-mix(in srgb, var(--warning) 45%, var(--line)); }
+    .gate-banner.failed { border-color: color-mix(in srgb, var(--danger) 50%, var(--line)); }
+    .gate-banner.passed { border-color: color-mix(in srgb, var(--success) 48%, var(--line)); }
+    .gate-banner.skipped { opacity: 0.78; }
+
+    .gate-icon {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--soft);
+      color: var(--muted);
+      font-size: 16px;
+      font-weight: 800;
+    }
+
+    .gate-banner.pending .gate-icon, .gate-banner.running .gate-icon { background: color-mix(in srgb, var(--warning) 13%, transparent); color: var(--warning); }
+    .gate-banner.failed .gate-icon { background: color-mix(in srgb, var(--danger) 13%, transparent); color: var(--danger); }
+    .gate-banner.passed .gate-icon { background: color-mix(in srgb, var(--success) 13%, transparent); color: var(--success); }
+    .gate-title { margin-bottom: 3px; font-size: 13px; font-weight: 780; }
+    .gate-copy { color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .gate-actions { display: flex; gap: 7px; }
+
     .section-head {
       display: flex;
       align-items: baseline;
@@ -383,6 +420,8 @@
       .hero { display: block; }
       .zero-token { display: inline-flex; margin-top: 15px; }
       .scope { grid-template-columns: 1fr; }
+      .gate-banner { grid-template-columns: auto minmax(0, 1fr); }
+      .gate-actions { grid-column: 1 / -1; }
       .job { grid-template-columns: minmax(0, 1fr) auto; }
       .job-time { display: none; }
       .job-actions { grid-column: 1 / -1; justify-content: flex-start; }
@@ -416,6 +455,15 @@
       <div id="connection" class="connection">本地面板</div>
     </div>
 
+    <section id="gate-banner" class="gate-banner" aria-live="polite">
+      <div id="gate-icon" class="gate-icon">✓</div>
+      <div>
+        <div id="gate-title" class="gate-title">当前没有待处理的完成门禁</div>
+        <div id="gate-copy" class="gate-copy">新的需求可以正常进入 Codex。</div>
+      </div>
+      <div id="gate-actions" class="gate-actions"></div>
+    </section>
+
     <div class="section-head">
       <h2>可运行套件</h2>
       <div id="suite-note" class="section-note"></div>
@@ -447,6 +495,11 @@
       const elements = {
         projectPath: document.getElementById('project-path'),
         connection: document.getElementById('connection'),
+        gateBanner: document.getElementById('gate-banner'),
+        gateIcon: document.getElementById('gate-icon'),
+        gateTitle: document.getElementById('gate-title'),
+        gateCopy: document.getElementById('gate-copy'),
+        gateActions: document.getElementById('gate-actions'),
         suites: document.getElementById('suites'),
         suiteNote: document.getElementById('suite-note'),
         jobs: document.getElementById('jobs'),
@@ -573,6 +626,71 @@
         }
       }
 
+      async function runGate(gate, clickedButton) {
+        const ids = gate.requiredSuiteIds.length ? gate.requiredSuiteIds : (currentState?.suites || []).map((suite) => suite.id);
+        if (!ids.length) {
+          showToast('没有可运行套件，请先配置 .codex/test-gate.json。');
+          return;
+        }
+        clickedButton.disabled = true;
+        try {
+          if ('Notification' in window && Notification.permission === 'default') void Notification.requestPermission();
+          for (const suiteId of ids) await callTool('start_test_suite', { projectPath, suiteId });
+          showToast(`已启动 ${ids.length} 个门禁测试套件。`);
+          await refresh();
+        } catch (error) {
+          showToast(error.message || '无法启动门禁测试。');
+        } finally {
+          clickedButton.disabled = false;
+        }
+      }
+
+      async function skipGate(gate, clickedButton) {
+        if (!window.confirm('确定跳过这次测试门禁吗？新的需求将被放行，但 A 功能不会获得“测试通过”标记。')) return;
+        clickedButton.disabled = true;
+        try {
+          await callTool('skip_test_gate', { projectPath, gateId: gate.gateId, confirmSkip: true });
+          showToast('已明确跳过 A 的测试门禁。');
+          await refresh();
+        } catch (error) {
+          showToast(error.message || '无法跳过门禁。');
+        } finally {
+          clickedButton.disabled = false;
+        }
+      }
+
+      function renderGate(gates) {
+        const gate = gates.find((item) => ['pending', 'running', 'failed'].includes(item.status)) || gates[0];
+        elements.gateActions.replaceChildren();
+        elements.gateBanner.className = 'gate-banner';
+        if (!gate) {
+          elements.gateIcon.textContent = '✓';
+          elements.gateTitle.textContent = '当前没有待处理的完成门禁';
+          elements.gateCopy.textContent = '新的需求可以正常进入 Codex。';
+          return;
+        }
+        elements.gateBanner.classList.add(gate.status);
+        const required = gate.requiredSuiteIds.length
+          ? gate.requiredSuiteIds.map((id) => currentState?.suites?.find((suite) => suite.id === id)?.label || id).join('、')
+          : '任一已配置测试套件';
+        const content = {
+          pending: ['!', 'A 的测试尚未开始', `下一条普通提示会在模型调用前被拦截。需要通过：${required}。`],
+          running: ['…', 'A 的测试正在本地运行', `可以关闭此面板；完成前新的任务请求不会进入模型。正在验证：${required}。`],
+          failed: ['×', 'A 的测试未通过', `查看日志并修复或重新运行；也可以明确跳过。需要通过：${required}。`],
+          passed: ['✓', 'A 的测试已经通过', '完成门禁已解除，新的需求可以进入 Codex。'],
+          skipped: ['↷', 'A 的测试已明确跳过', '完成门禁已解除，但这次开发没有测试通过标记。'],
+        }[gate.status] || ['?', '未知门禁状态', '请刷新后重试。'];
+        elements.gateIcon.textContent = content[0];
+        elements.gateTitle.textContent = content[1];
+        elements.gateCopy.textContent = content[2];
+        if (['pending', 'failed'].includes(gate.status)) {
+          elements.gateActions.append(button('运行所需测试', 'primary', (event) => runGate(gate, event.currentTarget)));
+        }
+        if (['pending', 'running', 'failed'].includes(gate.status)) {
+          elements.gateActions.append(button('明确跳过', 'danger', (event) => skipGate(gate, event.currentTarget)));
+        }
+      }
+
       async function openLog(job) {
         elements.logPanel.classList.add('open');
         elements.logTitle.textContent = `${job.suiteLabel} · ${statusLabel(job.status)}`;
@@ -686,6 +804,7 @@
           elements.projectPath.textContent = state.projectRoot;
           elements.connection.textContent = location.protocol === 'http:' ? '本地浏览器面板' : 'Codex 嵌入面板';
           renderSuites(state.suites || []);
+          renderGate(state.gates || []);
           renderJobs(state.jobs || []);
           announceCompletions(state.jobs || []);
           scheduleRefresh(state.jobs || []);

@@ -9,6 +9,7 @@ const path = require('node:path');
 const readline = require('node:readline');
 const { spawn, spawnSync } = require('node:child_process');
 const { projectState, realDirectory } = require('../scripts/test-gate-core.cjs');
+const { listProjectGates, skipProjectGate } = require('../scripts/test-gate-gates.cjs');
 
 const SERVER_NAME = 'test-gate';
 const SERVER_VERSION = '0.1.0';
@@ -139,6 +140,7 @@ function stateForProject(projectPath) {
     configExists: state.configExists,
     suites: state.suites.map(publicSuite),
     jobs: listJobs(state.projectRoot),
+    gates: listProjectGates(state.projectRoot),
   };
 }
 
@@ -299,6 +301,13 @@ async function callTool(name, args) {
       const job = cancelJob(args);
       return { content: [{ type: 'text', text: `Cancellation requested for ${job.suiteLabel}.` }], structuredContent: { job } };
     }
+    case 'skip_test_gate': {
+      validateProjectArgument(args);
+      if (args.confirmSkip !== true) throw new Error('Skipping a completion gate requires confirmSkip: true.');
+      const projectRoot = projectState(args.projectPath).projectRoot;
+      const gate = skipProjectGate(projectRoot, args.gateId);
+      return { content: [{ type: 'text', text: 'The pending validation gate was explicitly skipped.' }], structuredContent: { gate } };
+    }
     case 'read_test_job_log': {
       validateProjectArgument(args);
       const result = readJobLog(args);
@@ -412,8 +421,21 @@ const tools = [
   {
     name: 'open_test_gate',
     title: 'Open Test Gate',
-    description: 'Open the local Test Gate panel for a project after code changes or when the user asks to run deferred non-interactive tests. This does not run a test and must not be followed by model polling. Interactive browser, screenshot, and UI verification should continue through their normal tools instead.',
-    inputSchema: { type: 'object', properties: { projectPath: projectPathProperty }, required: ['projectPath'], additionalProperties: false },
+    description: 'Open the local Test Gate panel. Set createCompletionGate true only when implementation work is complete and non-interactive validation is now required before a new task begins; leave it false for ordinary panel inspection or when a gate already exists. This does not run a test and must not be followed by model polling.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectPath: projectPathProperty,
+        createCompletionGate: {
+          type: 'boolean',
+          title: 'Create completion gate',
+          description: 'Require discovered suites to pass or be explicitly skipped before the next ordinary prompt reaches the model.',
+          default: false,
+        },
+      },
+      required: ['projectPath', 'createCompletionGate'],
+      additionalProperties: false,
+    },
     outputSchema: {
       type: 'object',
       properties: { projectRoot: { type: 'string' }, suiteCount: { type: 'integer' }, browserOpened: { type: 'boolean' } },
@@ -468,6 +490,23 @@ const tools = [
       additionalProperties: false,
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    _meta: { ui: { visibility: ['app'] }, 'openai/visibility': 'private' },
+  },
+  {
+    name: 'skip_test_gate',
+    title: 'Skip pending validation',
+    description: 'UI-only action that explicitly resolves one pending completion gate as skipped.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectPath: projectPathProperty,
+        gateId: { type: 'string', minLength: 36, maxLength: 36 },
+        confirmSkip: { type: 'boolean' }
+      },
+      required: ['projectPath', 'gateId', 'confirmSkip'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     _meta: { ui: { visibility: ['app'] }, 'openai/visibility': 'private' },
   },
   {

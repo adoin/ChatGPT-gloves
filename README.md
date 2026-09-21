@@ -4,7 +4,7 @@ Reusable Codex plugins and skills.
 
 ## Test Gate
 
-Test Gate prevents Codex from running or polling non-interactive automated tests, benchmarks, E2E suites, and acceptance suites. It hands those commands to a detached local runner with an embedded MCP UI and loopback browser fallback. Interactive browser work, screenshots, visual inspection, development servers, builds, linting, and type checking remain available. See the [plugin guide](plugins/test-gate/README.md) for suite discovery and project configuration.
+Test Gate prevents Codex from running or polling non-interactive automated tests, benchmarks, E2E suites, and acceptance suites. It hands those commands to a detached local runner and blocks unrelated follow-up prompts before model invocation until the required suites pass or the user explicitly skips them. Interactive browser work, screenshots, visual inspection, development servers, builds, linting, and type checking remain available. See the [plugin guide](plugins/test-gate/README.md) for controls, suite discovery, and project configuration.
 
 ## Local SSH Deploy
 

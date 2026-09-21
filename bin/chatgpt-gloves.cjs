@@ -43,7 +43,9 @@ function verify() {
         "mcp/test-gate.html",
         "scripts/pre-tool-use.cjs",
         "scripts/run-job.cjs",
+        "scripts/test-gate-gates.cjs",
         "scripts/test-gate-core.cjs",
+        "scripts/user-prompt-submit.cjs",
         "skills/test-gate/SKILL.md"
       ]
     }

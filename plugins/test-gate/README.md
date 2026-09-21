@@ -1,6 +1,8 @@
 # Test Gate
 
-Test Gate keeps non-interactive automated tests out of Codex turns. A `PreToolUse` hook blocks clearly identified test, E2E, acceptance, and benchmark commands before they start. A local dashboard runs configured suites in detached worker processes, stores bounded local logs, refreshes status without model calls, and lets the user copy results when they are ready.
+Test Gate keeps non-interactive automated tests out of Codex turns. A `PreToolUse` hook blocks clearly identified test, E2E, acceptance, and benchmark commands before they start and creates a task-scoped completion gate. A local dashboard runs configured suites in detached worker processes, stores bounded local logs, refreshes status without model calls, and lets the user copy results when they are ready.
+
+While that completion gate is pending, running, or failed, a synchronous `UserPromptSubmit` hook rejects ordinary follow-up prompts before model invocation. This prevents a user from accidentally moving from feature A to feature B while assuming A was fully validated. The gate resolves only after its required suites pass or the user explicitly skips it. The `open_test_gate` MCP call can also request gate creation when Codex proactively hands off validation without first attempting a shell test command.
 
 Interactive verification is deliberately outside the gate. Codex can still use browser tools, Computer Use, screenshots, visual inspection, development servers, builds, linters, and type checkers.
 
@@ -12,9 +14,24 @@ Ask Codex to open Test Gate, or let the `$test-gate` skill hand off automated va
 - follow status and a bounded log tail without model polling;
 - cancel the exact worker process tree;
 - copy a compact result or the visible log;
+- see whether the current feature is pending, running, failed, passed, or explicitly skipped;
+- explicitly skip the current completion gate after confirmation;
 - close the Codex task while the detached worker continues.
 
 Only asking Codex to analyze a completed result starts another model turn. Running and observing a suite in the panel does not.
+
+## Prompt gate controls
+
+If you forget that Test Gate is installed and send a new request while validation is unresolved, Codex displays the pending state and does not send that request to the model. Use one of these exact controls:
+
+```text
+运行待处理测试        # or /test-gate run
+测试状态              # or /test-gate status
+打开 Test Gate        # or /test-gate open
+跳过待处理测试        # or /test-gate skip
+```
+
+Run, status, and skip are processed entirely by the local hook and the control prompt itself is blocked before model invocation. Opening the graphical panel permits one narrowly scoped model turn so Codex can call the `open_test_gate` MCP tool. After a pass or explicit skip, resend the next feature request.
 
 ## Suite discovery
 
@@ -51,7 +68,7 @@ Suite commands use an executable plus argument array and run with `shell: false`
 
 ## Command policy
 
-The hook listens only to the Codex `Bash`/unified-exec tool path. It blocks well-known non-interactive runners such as Jest, Vitest, Pytest, Playwright Test, Cypress Run, Cargo Test, Go Test, and package-manager test scripts. It explicitly permits browser-launch, Playwright screenshot/codegen/show-report, and Cypress open commands.
+The command hook listens only to the Codex `Bash`/unified-exec tool path. It blocks well-known non-interactive runners such as Jest, Vitest, Pytest, Playwright Test, Cypress Run, Cargo Test, Go Test, and package-manager test scripts. It explicitly permits browser-launch, Playwright screenshot/codegen/show-report, and Cypress open commands. The prompt hook is task-scoped by Codex session id, so a pending gate in one task does not block an unrelated task in the same project.
 
 Hook coverage is a guardrail rather than an operating-system sandbox. A repository that needs stronger organizational enforcement should combine Test Gate with managed hooks or CI policy.
 

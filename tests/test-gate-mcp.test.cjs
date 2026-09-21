@@ -11,6 +11,7 @@ const test = require('node:test');
 const pluginRoot = path.resolve(__dirname, '../plugins/test-gate');
 const mcpConfigPath = path.join(pluginRoot, '.mcp.json');
 const serverPath = path.join(pluginRoot, 'mcp', 'server.cjs');
+const hookPath = path.join(pluginRoot, 'scripts', 'pre-tool-use.cjs');
 const dashboardPath = path.join(pluginRoot, 'mcp', 'test-gate.html');
 const dashboardUri = 'ui://test-gate/dashboard-v1.html';
 
@@ -70,6 +71,25 @@ function startServer(item) {
   };
 }
 
+function createPendingGate(item, sessionId = 'mcp-gate-session') {
+  const result = spawnSync(process.execPath, [hookPath], {
+    input: JSON.stringify({
+      session_id: sessionId,
+      turn_id: 'gate-turn',
+      cwd: item.project,
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: 'node --test' },
+    }),
+    encoding: 'utf8',
+    timeout: 5_000,
+    windowsHide: true,
+    env: { ...process.env, TEST_GATE_DATA_DIR: item.data },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+}
+
 async function initialize(client) {
   client.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test-gate-test', version: '1' } } });
   const response = await client.receive();
@@ -100,6 +120,7 @@ test('bundled MCP config launches Test Gate from the plugin root', () => {
 
 test('server exposes an embedded dashboard and app-only runner controls', async (t) => {
   const item = fixture();
+  createPendingGate(item);
   const client = startServer(item);
   t.after(() => { client.stop(); fs.rmSync(item.root, { recursive: true, force: true }); });
   await initialize(client);
@@ -111,19 +132,31 @@ test('server exposes an embedded dashboard and app-only runner controls', async 
     'start_test_suite',
     'cancel_test_job',
     'read_test_job_log',
+    'skip_test_gate',
     'get_test_job_summary',
   ]);
   assert.equal(listed.result.tools[0]._meta.ui.resourceUri, dashboardUri);
-  for (const tool of listed.result.tools.slice(1, 5)) assert.deepEqual(tool._meta.ui.visibility, ['app']);
+  for (const tool of listed.result.tools.slice(1, 6)) assert.deepEqual(tool._meta.ui.visibility, ['app']);
   assert.equal(listed.result.tools.some((tool) => /command|shell|executable/i.test(tool.name)), false);
 
-  const opened = await call(client, 3, 'open_test_gate', { projectPath: item.project });
+  const openTool = listed.result.tools[0];
+  assert.deepEqual(openTool.inputSchema.required, ['projectPath', 'createCompletionGate']);
+  const opened = await call(client, 3, 'open_test_gate', { projectPath: item.project, createCompletionGate: false });
   assert.equal(opened.structuredContent.suiteCount, 2);
   assert.equal(opened.structuredContent.browserOpened, false);
   const response = await fetch(opened._meta.dashboardUrl);
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-security-policy'), /default-src 'none'/);
-  assert.equal(await response.text(), fs.readFileSync(dashboardPath, 'utf8'));
+  const html = await response.text();
+  assert.equal(html, fs.readFileSync(dashboardPath, 'utf8'));
+  assert.match(html, /id="gate-banner"/);
+
+  const state = await call(client, 4, 'get_test_gate_state', { projectPath: item.project });
+  assert.equal(state.structuredContent.gates[0].status, 'pending');
+  const refused = await call(client, 5, 'skip_test_gate', { projectPath: item.project, gateId: state.structuredContent.gates[0].gateId, confirmSkip: false });
+  assert.equal(refused.isError, true);
+  const skipped = await call(client, 6, 'skip_test_gate', { projectPath: item.project, gateId: state.structuredContent.gates[0].gateId, confirmSkip: true });
+  assert.equal(skipped.structuredContent.gate.status, 'skipped');
 });
 
 test('a configured suite runs in a detached worker and produces a copyable result', async (t) => {

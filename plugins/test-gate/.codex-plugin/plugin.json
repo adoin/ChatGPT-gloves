@@ -1,7 +1,7 @@
 {
   "name": "test-gate",
-  "version": "0.1.0",
-  "description": "Run non-interactive tests outside Codex turns without model polling.",
+  "version": "0.1.0+codex.20260921040402",
+  "description": "Require non-interactive tests to pass or be explicitly skipped without model polling.",
   "author": {
     "name": "adoin",
     "url": "https://github.com/adoin"
@@ -19,13 +19,15 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Test Gate",
-    "shortDescription": "Run automated tests without model polling.",
-    "longDescription": "Blocks only non-interactive automated test commands launched by Codex and hands them to a detached local runner with an embedded or browser-based dashboard. Interactive browser, screenshot, and UI verification remains available.",
+    "shortDescription": "Gate new work on deferred test results.",
+    "longDescription": "Blocks only non-interactive automated tests launched by Codex, runs them in a detached local dashboard, and prevents a new task from reaching the model until required tests pass or the user explicitly skips them. Interactive browser, screenshot, and UI verification remains available.",
     "developerName": "adoin",
     "category": "Productivity",
     "capabilities": [
       "Non-interactive test guard",
       "Detached local test runner",
+      "Task completion gate",
+      "Pre-model prompt blocking",
       "Embedded test dashboard",
       "Zero-model-polling status",
       "One-click result copy"
