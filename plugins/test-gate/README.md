@@ -2,13 +2,15 @@
 
 Test Gate keeps non-interactive automated tests out of Codex turns. A `PreToolUse` hook blocks clearly identified test, E2E, acceptance, and benchmark commands before they start and creates a task-scoped completion gate. A local dashboard runs configured suites in detached worker processes, stores bounded local logs, refreshes status without model calls, and lets the user copy results when they are ready.
 
-While that completion gate is pending, running, or failed, a synchronous `UserPromptSubmit` hook rejects ordinary follow-up prompts before model invocation. This prevents a user from accidentally moving from feature A to feature B while assuming A was fully validated. The gate resolves only after its required suites pass or the user explicitly skips it. The `open_test_gate` MCP call can also request gate creation when Codex proactively hands off validation without first attempting a shell test command.
+While that completion gate is pending, running, or failed, a synchronous `UserPromptSubmit` hook rejects ordinary follow-up prompts before model invocation. This prevents a user from accidentally moving from feature A to feature B while assuming A was fully validated. The gate resolves only after its required suites pass or the user explicitly skips it.
+
+Gate creation has one path only: the `PreToolUse` hook must block an actual non-interactive test command. Code changes, completed implementation, Skill activation, browser verification, and `open_test_gate` tool calls never create a gate by themselves.
 
 Interactive verification is deliberately outside the gate. Codex can still use browser tools, Computer Use, screenshots, visual inspection, development servers, builds, linters, and type checkers.
 
 ## User experience
 
-Ask Codex to open Test Gate, or let the `$test-gate` skill hand off automated validation after an implementation task. The MCP tool returns an MCP Apps UI resource for hosts that render embedded plugin UI and also opens a loopback-only browser panel as a portable fallback. From the panel you can:
+Ask Codex to open Test Gate only when you want to inspect an existing gate or manually view available suites. The MCP tool returns an MCP Apps UI resource for hosts that render embedded plugin UI and also opens a loopback-only browser panel as a portable fallback. Opening the panel never creates a gate. From the panel you can:
 
 - start a discovered or configured suite;
 - follow status and a bounded log tail without model polling;

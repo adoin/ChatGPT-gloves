@@ -107,7 +107,7 @@ process.stdin.on('end', () => {
       output({
         hookSpecificOutput: {
           hookEventName: 'UserPromptSubmit',
-          additionalContext: 'A Test Gate completion gate is already pending. Only call open_test_gate for the current project with createCompletionGate: false and explain the panel controls. Do not perform code work or start a new task domain.',
+          additionalContext: 'The user explicitly asked to open an already pending Test Gate. Call open_test_gate for the current project and explain the panel controls. Do not perform code work or start a new task domain.',
         },
       });
       return;

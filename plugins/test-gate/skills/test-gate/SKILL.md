@@ -11,7 +11,7 @@ When the shell hook blocks a test, Test Gate creates a completion gate for the c
 
 ## Boundary
 
-- Do not run unit, integration, E2E, acceptance, regression, or benchmark suites through shell tools, wrappers, CI commands, subagents, or alternate runners.
+- When automated validation is relevant, issue the intended non-interactive test command exactly once through the normal shell tool. The PreToolUse hook blocks it before execution and creates the gate. This single intercepted attempt is the only supported gate-creation path.
 - Do not retry, disguise, delegate, or split a command after the Test Gate hook blocks it.
 - Do not poll a Test Gate job from the model.
 - Do not begin a separate feature or task domain while the current completion gate is pending, running, or failed.
@@ -20,9 +20,9 @@ When the shell hook blocks a test, Test Gate creates a completion gate for the c
 
 ## Workflow
 
-After implementation, perform any useful interactive UI verification directly. If non-interactive tests are relevant, call `open_test_gate` once with the current project root and `createCompletionGate: true`, then tell the user which suites are required. The tool-call hook records the task completion gate even though no shell test command was attempted. The user can start, monitor, cancel, and copy results from that panel without keeping the Codex turn active.
+After implementation, perform useful interactive UI verification directly. Do not create a completion gate merely because code changed, implementation finished, a Skill was loaded, or validation might be useful. If a concrete non-interactive test command is appropriate, attempt that exact command once; the hook will block it before execution and record only the suites represented by that command.
 
-Use `createCompletionGate: false` when the user only wants to inspect the panel or when opening a gate that is already pending. Do not create a gate merely because the user is browsing Test Gate.
+After the hook blocks a command, do not automatically call `open_test_gate`. Tell the user about the pending gate and the local control phrases below. Call `open_test_gate` only after the user explicitly asks to open the panel. Calling `open_test_gate` never creates a gate.
 
 If the user sends a new request while a gate is unresolved, the prompt hook handles it before model invocation. The user-facing local control phrases are:
 

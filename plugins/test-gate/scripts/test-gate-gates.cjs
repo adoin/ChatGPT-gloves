@@ -137,36 +137,6 @@ function recordPendingGate({ sessionId, cwd, turnId, command, kind }) {
   return gate;
 }
 
-function recordCompletionGate({ sessionId, projectPath, turnId, kind = 'deferred non-interactive validation' }) {
-  const state = projectState(projectPath);
-  const filePath = gatePathForSession(sessionId);
-  const now = new Date().toISOString();
-  let gate = null;
-  if (fs.existsSync(filePath)) {
-    try { gate = readJson(filePath); } catch { /* Replace an invalid gate file. */ }
-  }
-  if (!gate || gate.version !== 1 || gate.projectRoot !== state.projectRoot || gate.resolution) {
-    gate = {
-      version: 1,
-      gateId: crypto.randomUUID(),
-      sessionKey: sessionKey(sessionId),
-      projectRoot: state.projectRoot,
-      createdAt: now,
-      updatedAt: now,
-      createdTurnId: typeof turnId === 'string' ? turnId : null,
-      requiredSuiteIds: state.suites.map((suite) => suite.id),
-      blockedKinds: [kind],
-      resolution: null,
-    };
-  } else {
-    gate.updatedAt = now;
-    if (!gate.requiredSuiteIds.length) gate.requiredSuiteIds = state.suites.map((suite) => suite.id);
-    gate.blockedKinds = [...new Set([...gate.blockedKinds, kind])];
-  }
-  atomicWrite(filePath, gate);
-  return gate;
-}
-
 function jobsForProject(projectRoot) {
   const directory = path.join(dataDirectory(), 'jobs', projectKey(projectRoot));
   if (!fs.existsSync(directory)) return [];
@@ -286,7 +256,6 @@ module.exports = {
   persistPassedGate,
   publicGate,
   readSessionGate,
-  recordCompletionGate,
   recordPendingGate,
   skipProjectGate,
   skipSessionGate,

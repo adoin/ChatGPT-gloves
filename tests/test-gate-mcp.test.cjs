@@ -95,7 +95,7 @@ async function initialize(client) {
   client.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test-gate-test', version: '1' } } });
   const response = await client.receive();
   assert.equal(response.result.serverInfo.name, 'test-gate');
-  assert.match(response.result.instructions, /Never run or poll non-interactive/);
+  assert.match(response.result.instructions, /completion gate exists only after.*PreToolUse hook blocks/s);
 }
 
 async function call(client, id, name, args = {}) {
@@ -182,8 +182,9 @@ test('server exposes an embedded dashboard and app-only runner controls', async 
   assert.equal(listed.result.tools.some((tool) => /command|shell|executable/i.test(tool.name)), false);
 
   const openTool = listed.result.tools[0];
-  assert.deepEqual(openTool.inputSchema.required, ['projectPath', 'createCompletionGate']);
-  const opened = await call(client, 3, 'open_test_gate', { projectPath: item.project, createCompletionGate: false });
+  assert.deepEqual(openTool.inputSchema.required, ['projectPath']);
+  assert.equal(openTool.inputSchema.properties.createCompletionGate, undefined);
+  const opened = await call(client, 3, 'open_test_gate', { projectPath: item.project });
   assert.equal(opened.structuredContent.suiteCount, 2);
   assert.equal(opened.structuredContent.browserOpened, false);
   assert.equal(opened.structuredContent.browserOpenError, null);

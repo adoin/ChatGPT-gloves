@@ -466,19 +466,11 @@ const tools = [
   {
     name: 'open_test_gate',
     title: 'Open Test Gate',
-    description: 'Open the local Test Gate panel. Set createCompletionGate true only when implementation work is complete and non-interactive validation is now required before a new task begins; leave it false for ordinary panel inspection or when a gate already exists. This does not run a test and must not be followed by model polling.',
+    description: 'Open the local Test Gate panel only when the user explicitly asks to see it or a completion gate already exists. This tool never creates a completion gate. Gates are created exclusively when the Bash PreToolUse hook blocks an actual non-interactive test command.',
     inputSchema: {
       type: 'object',
-      properties: {
-        projectPath: projectPathProperty,
-        createCompletionGate: {
-          type: 'boolean',
-          title: 'Create completion gate',
-          description: 'Require discovered suites to pass or be explicitly skipped before the next ordinary prompt reaches the model.',
-          default: false,
-        },
-      },
-      required: ['projectPath', 'createCompletionGate'],
+      properties: { projectPath: projectPathProperty },
+      required: ['projectPath'],
       additionalProperties: false,
     },
     outputSchema: {
@@ -593,7 +585,7 @@ async function handleRequest(message) {
         protocolVersion: message.params?.protocolVersion || '2025-06-18',
         capabilities: { tools: {}, resources: {} },
         serverInfo: { name: SERVER_NAME, title: 'Test Gate', version: SERVER_VERSION },
-        instructions: 'Never run or poll non-interactive automated tests from a Codex turn. Keep interactive browser, Computer Use, screenshot, and UI verification available. Use open_test_gate once to hand deferred suites to the user. Only use get_test_job_summary after the user explicitly asks to analyze a completed job.',
+        instructions: 'A completion gate exists only after the Bash PreToolUse hook blocks an actual non-interactive test command. Never create a gate merely because code changed. Never call open_test_gate automatically after implementation or after a blocked test; open it only when the user explicitly asks. Keep interactive browser, Computer Use, screenshot, and UI verification available. Only use get_test_job_summary after the user explicitly asks to analyze a completed job.',
       });
       return;
     case 'ping': sendResult(message.id, {}); return;

@@ -62,7 +62,7 @@ function runPromptHook(root, data, prompt, sessionId = 'test-session') {
   });
 }
 
-function runOpenPanelHook(root, data, createCompletionGate, sessionId) {
+function runOpenPanelHook(root, data, sessionId) {
   return spawnSync(process.execPath, [hookPath], {
     input: JSON.stringify({
       session_id: sessionId,
@@ -70,7 +70,7 @@ function runOpenPanelHook(root, data, createCompletionGate, sessionId) {
       cwd: root,
       hook_event_name: 'PreToolUse',
       tool_name: 'mcp__test-gate__open_test_gate',
-      tool_input: { projectPath: root, createCompletionGate },
+      tool_input: { projectPath: root, createCompletionGate: true },
     }),
     encoding: 'utf8',
     timeout: 5_000,
@@ -182,7 +182,7 @@ test('pending completion gate blocks a new task before model invocation and supp
 
   const open = JSON.parse(runPromptHook(root, data, '打开 Test Gate', 'gate-session').stdout);
   assert.equal(open.decision, undefined);
-  assert.match(open.hookSpecificOutput.additionalContext, /Only call open_test_gate/);
+  assert.match(open.hookSpecificOutput.additionalContext, /Call open_test_gate/);
 
   const skipped = JSON.parse(runPromptHook(root, data, '跳过待处理测试', 'gate-session').stdout);
   assert.equal(skipped.decision, 'block');
@@ -192,25 +192,16 @@ test('pending completion gate blocks a new task before model invocation and supp
   assert.equal(allowed.stdout, '');
 });
 
-test('opening the panel can explicitly create a completion gate without attempting a shell test', (t) => {
+test('opening the panel cannot create a completion gate without an intercepted shell test', (t) => {
   const root = fixture();
   const data = path.join(root, 'gate-data');
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  const inspectOnly = runOpenPanelHook(root, data, false, 'inspection-session');
-  assert.equal(inspectOnly.status, 0, inspectOnly.stderr);
-  assert.equal(inspectOnly.stdout, '');
+  const panelCall = runOpenPanelHook(root, data, 'inspection-session');
+  assert.equal(panelCall.status, 0, panelCall.stderr);
+  assert.equal(panelCall.stdout, '');
   assert.equal(runPromptHook(root, data, '开始 B', 'inspection-session').stdout, '');
-
-  const handoff = runOpenPanelHook(root, data, true, 'handoff-session');
-  assert.equal(handoff.status, 0, handoff.stderr);
-  assert.equal(handoff.stdout, '');
-  const blocked = JSON.parse(runPromptHook(root, data, '开始 B', 'handoff-session').stdout);
-  assert.equal(blocked.decision, 'block');
-  assert.match(blocked.reason, /尚未完成/);
-  const gateFile = fs.readdirSync(path.join(data, 'gates')).map((name) => path.join(data, 'gates', name))[0];
-  const gate = JSON.parse(fs.readFileSync(gateFile, 'utf8'));
-  assert.equal(gate.requiredSuiteIds.length, 4);
+  assert.deepEqual(fs.readdirSync(path.join(data, 'gates')), []);
 });
 
 test('run control starts the required suite locally and automatically releases the next prompt after it passes', async (t) => {
