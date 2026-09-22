@@ -10,7 +10,7 @@ Interactive verification is deliberately outside the gate. Codex can still use b
 
 ## User experience
 
-Ask Codex to open Test Gate only when you want to inspect an existing gate or manually view available suites. The MCP tool returns an MCP Apps UI resource for hosts that render embedded plugin UI and also opens a loopback-only browser panel as a portable fallback. Opening the panel never creates a gate. From the panel you can:
+After Codex attempts a real non-interactive test and the hook blocks it, Codex attaches an expandable `Open Test Gate` MCP Apps UI component to that conversation turn. Expanding it stays inside Codex and never opens a system browser. Opening the panel never creates a gate. From the panel you can:
 
 - start a discovered or configured suite;
 - follow status and a bounded log tail without model polling;
@@ -30,10 +30,11 @@ If you forget that Test Gate is installed and send a new request while validatio
 运行待处理测试        # or /test-gate run
 测试状态              # or /test-gate status
 打开 Test Gate        # or /test-gate open
+浏览器打开 Test Gate  # or /test-gate browser
 跳过待处理测试        # or /test-gate skip
 ```
 
-Run, status, and skip are processed entirely by the local hook and the control prompt itself is blocked before model invocation. Opening the graphical panel permits one narrowly scoped model turn so Codex can call the `open_test_gate` MCP tool. After a pass or explicit skip, resend the next feature request.
+Run, status, and skip are processed entirely by the local hook and the control prompt itself is blocked before model invocation. Opening the embedded panel permits one narrowly scoped model turn so Codex can call `open_test_gate`; explicitly asking for the browser permits `open_test_gate_browser`. After a pass or explicit skip, resend the next feature request.
 
 ## Suite discovery
 
@@ -85,9 +86,9 @@ Test Gate is designed for local Codex environments on Windows, macOS, Linux, and
 | Command resolution | Project `.bin`, inherited `PATH`, `.exe/.com/.cmd/.bat` shims | Project `.bin`, inherited `PATH`, executable files | Project `.bin`, inherited `PATH`, executable files |
 | Process cancellation | `taskkill /T /F` | POSIX process group, then `SIGKILL` fallback | POSIX process group, then `SIGKILL` fallback |
 | Durable state | `%LOCALAPPDATA%\\OpenAI\\Codex\\test-gate` | `~/Library/Application Support/OpenAI/Codex/test-gate` | `${XDG_STATE_HOME:-~/.local/state}/openai-codex/test-gate` |
-| Browser fallback | Edge app window or Explorer | `open` | `xdg-open`, `gio open`, or `sensible-browser`; WSL also tries `wslview` |
+| Explicit browser window | Edge app window or Explorer | `open` | `xdg-open`, `gio open`, or `sensible-browser`; WSL also tries `wslview` |
 
-The MCP Apps UI remains the primary portable interface. Failure to launch a separate graphical browser is non-fatal, which keeps the embedded panel usable on headless Linux, remote shells, minimal containers, and WSL installations without a browser launcher.
+The MCP Apps UI remains the primary portable interface. A separate graphical browser launches only after the user explicitly asks for it. Failure to launch that optional window is non-fatal, which keeps the embedded panel usable on headless Linux, remote shells, minimal containers, and WSL installations without a browser launcher.
 
 ## Command policy
 

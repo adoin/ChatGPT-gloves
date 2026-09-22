@@ -22,14 +22,15 @@ When the shell hook blocks a test, Test Gate creates a completion gate for the c
 
 After implementation, perform useful interactive UI verification directly. Do not create a completion gate merely because code changed, implementation finished, a Skill was loaded, or validation might be useful. If a concrete non-interactive test command is appropriate, attempt that exact command once; the hook will block it before execution and record only the suites represented by that command.
 
-After the hook blocks a command, do not automatically call `open_test_gate`. Tell the user about the pending gate and the local control phrases below. Call `open_test_gate` only after the user explicitly asks to open the panel. Calling `open_test_gate` never creates a gate.
+After the hook blocks a command, call `open_test_gate` exactly once to attach the expandable MCP Apps UI component inside the Codex conversation. This call never creates a gate and never opens a system browser. Tell the user about the pending gate and the local control phrases below. Do not call `open_test_gate_browser` unless the user explicitly asks for a separate browser window.
 
 If the user sends a new request while a gate is unresolved, the prompt hook handles it before model invocation. The user-facing local control phrases are:
 
 - `运行待处理测试` or `/test-gate run`: start the required suites locally without a model call;
 - `测试状态` or `/test-gate status`: read the gate state without a model call;
 - `跳过待处理测试` or `/test-gate skip`: explicitly resolve the gate as skipped without a model call;
-- `打开 Test Gate` or `/test-gate open`: allow a narrowly scoped model turn that only opens the panel.
+- `打开 Test Gate` or `/test-gate open`: allow a narrowly scoped model turn that reattaches the embedded conversation panel;
+- `浏览器打开 Test Gate` or `/test-gate browser`: explicitly open a separate local system-browser window.
 
 Do not reinterpret a skip: only the explicit control phrase or the dashboard's confirmed skip action resolves a gate without passing tests.
 
@@ -39,4 +40,4 @@ If Test Gate has no discovered suites, explain that it discovers common package 
 
 If the dashboard reports an unavailable executor, explain that Test Gate resolves project-local `node_modules/.bin` entries and inherited local PATH entries, including Windows `.cmd` shims. Ask the user to install or expose the missing runner locally; do not bypass the gate by running the suite through a different shell tool.
 
-On macOS and Linux/WSL, executors run directly and cancellation targets the detached POSIX process group. A missing graphical browser launcher is not a runner failure: use the embedded MCP panel when available, or tell the user which local launcher dependency (`open`, `xdg-open`, `gio`, `sensible-browser`, or `wslview`) is missing.
+On macOS and Linux/WSL, executors run directly and cancellation targets the detached POSIX process group. A missing graphical browser launcher is not a runner failure: the embedded MCP panel remains available, or tell the user which local launcher dependency (`open`, `xdg-open`, `gio`, `sensible-browser`, or `wslview`) is missing after an explicit browser-open request.

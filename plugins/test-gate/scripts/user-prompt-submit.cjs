@@ -12,6 +12,7 @@ const {
 } = require('./test-gate-gates.cjs');
 
 const OPEN_PATTERN = /^\s*(?:\/test-gate\s+open|打开\s*test\s*gate|打开测试门禁)\s*[。.!！]?\s*$/i;
+const OPEN_BROWSER_PATTERN = /^\s*(?:\/test-gate\s+browser|浏览器打开\s*test\s*gate|在浏览器(?:中)?打开\s*test\s*gate|浏览器打开测试门禁|在浏览器(?:中)?打开测试门禁)\s*[。.!！]?\s*$/i;
 const RUN_PATTERN = /^\s*(?:\/test-gate\s+run|开始(?:待处理)?测试|运行(?:待处理)?测试)\s*[。.!！]?\s*$/i;
 const STATUS_PATTERN = /^\s*(?:\/test-gate\s+status|查看(?:待处理)?测试状态|测试状态)\s*[。.!！]?\s*$/i;
 const SKIP_PATTERN = /^\s*(?:\/test-gate\s+skip|跳过(?:待处理)?测试|跳过测试门禁)\s*[。.!！]?\s*$/i;
@@ -103,11 +104,20 @@ process.stdin.on('end', () => {
       }
       return;
     }
+    if (OPEN_BROWSER_PATTERN.test(prompt)) {
+      output({
+        hookSpecificOutput: {
+          hookEventName: 'UserPromptSubmit',
+          additionalContext: 'The user explicitly asked to open the pending Test Gate in a separate system-browser window. Call open_test_gate_browser for the current project. Do not perform code work or start a new task domain.',
+        },
+      });
+      return;
+    }
     if (OPEN_PATTERN.test(prompt)) {
       output({
         hookSpecificOutput: {
           hookEventName: 'UserPromptSubmit',
-          additionalContext: 'The user explicitly asked to open an already pending Test Gate. Call open_test_gate for the current project and explain the panel controls. Do not perform code work or start a new task domain.',
+          additionalContext: 'The user explicitly asked to reopen the pending Test Gate inside the conversation. Call open_test_gate for the current project and explain the panel controls. Do not call open_test_gate_browser, perform code work, or start a new task domain.',
         },
       });
       return;

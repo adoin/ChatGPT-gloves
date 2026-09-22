@@ -291,6 +291,7 @@ function sendJson(response, statusCode, body) {
 async function callTool(name, args) {
   switch (name) {
     case 'open_test_gate': return openDashboard(args || {});
+    case 'open_test_gate_browser': return openDashboardInBrowser(args || {});
     case 'get_test_gate_state': {
       validateProjectArgument(args);
       const state = stateForProject(args.projectPath);
@@ -435,6 +436,23 @@ async function openInSystemBrowser(url) {
 async function openDashboard(value) {
   validateProjectArgument(value);
   const state = stateForProject(value.projectPath);
+  return {
+    content: [{
+      type: 'text',
+      text: `Test Gate is attached for ${state.projectRoot}. ${state.suites.length} non-interactive suite(s) can be run outside the Codex turn. Do not poll their status from the model.`,
+    }],
+    structuredContent: {
+      projectRoot: state.projectRoot,
+      suiteCount: state.suites.length,
+      runtimePlatform: state.runtimePlatform,
+    },
+    _meta: { ui: { resourceUri: DASHBOARD_URI }, 'openai/outputTemplate': DASHBOARD_URI },
+  };
+}
+
+async function openDashboardInBrowser(value) {
+  validateProjectArgument(value);
+  const state = stateForProject(value.projectPath);
   const baseUrl = await ensureDashboardServer();
   const dashboardUrl = `${baseUrl}?projectPath=${encodeURIComponent(state.projectRoot)}`;
   const browser = await openInSystemBrowser(dashboardUrl);
@@ -466,7 +484,30 @@ const tools = [
   {
     name: 'open_test_gate',
     title: 'Open Test Gate',
-    description: 'Open the local Test Gate panel only when the user explicitly asks to see it or a completion gate already exists. This tool never creates a completion gate. Gates are created exclusively when the Bash PreToolUse hook blocks an actual non-interactive test command.',
+    description: 'Attach the Test Gate panel inside the Codex conversation after an actual non-interactive test command has been blocked, or when the user explicitly asks to reopen an existing gate. This tool never creates a completion gate and never opens a system browser.',
+    inputSchema: {
+      type: 'object',
+      properties: { projectPath: projectPathProperty },
+      required: ['projectPath'],
+      additionalProperties: false,
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        projectRoot: { type: 'string' },
+        suiteCount: { type: 'integer' },
+        runtimePlatform: { type: 'string' },
+      },
+      required: ['projectRoot', 'suiteCount', 'runtimePlatform'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    _meta: { ui: { resourceUri: DASHBOARD_URI }, 'openai/outputTemplate': DASHBOARD_URI },
+  },
+  {
+    name: 'open_test_gate_browser',
+    title: 'Open Test Gate in browser',
+    description: 'Open an existing Test Gate in a separate local system-browser window only when the user explicitly requests the browser window. This tool never creates a completion gate.',
     inputSchema: {
       type: 'object',
       properties: { projectPath: projectPathProperty },
@@ -485,8 +526,7 @@ const tools = [
       required: ['projectRoot', 'suiteCount', 'browserOpened', 'browserOpenError', 'runtimePlatform'],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    _meta: { ui: { resourceUri: DASHBOARD_URI }, 'openai/outputTemplate': DASHBOARD_URI },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: 'get_test_gate_state',
@@ -585,7 +625,7 @@ async function handleRequest(message) {
         protocolVersion: message.params?.protocolVersion || '2025-06-18',
         capabilities: { tools: {}, resources: {} },
         serverInfo: { name: SERVER_NAME, title: 'Test Gate', version: SERVER_VERSION },
-        instructions: 'A completion gate exists only after the Bash PreToolUse hook blocks an actual non-interactive test command. Never create a gate merely because code changed. Never call open_test_gate automatically after implementation or after a blocked test; open it only when the user explicitly asks. Keep interactive browser, Computer Use, screenshot, and UI verification available. Only use get_test_job_summary after the user explicitly asks to analyze a completed job.',
+        instructions: 'A completion gate exists only after the Bash PreToolUse hook blocks an actual non-interactive test command. Never create a gate merely because code changed. After a blocked test, call open_test_gate exactly once to attach its embedded conversation component; this never opens a system browser. Call open_test_gate_browser only when the user explicitly requests a separate browser window. Keep interactive browser, Computer Use, screenshot, and UI verification available. Only use get_test_job_summary after the user explicitly asks to analyze a completed job.',
       });
       return;
     case 'ping': sendResult(message.id, {}); return;

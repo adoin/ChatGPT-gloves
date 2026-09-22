@@ -28,7 +28,7 @@ process.stdin.on('end', () => {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
-        permissionDecisionReason: `Test Gate blocked ${decision.kind} and created a completion gate for this task. Do not retry, disguise, delegate, poll, or automatically open the Test Gate panel. Browser interaction, Computer Use, screenshots, UI inspection, builds, linters, type checks, and development servers remain allowed. Tell the user that “运行待处理测试” starts it locally, “测试状态” checks it, “打开 Test Gate” opens the panel, and “跳过待处理测试” explicitly skips it. New ordinary prompts are held before model invocation until the test passes or the user explicitly skips it.`,
+        permissionDecisionReason: `Test Gate blocked ${decision.kind} and created a completion gate for this task. Do not retry, disguise, delegate, or poll. Call open_test_gate exactly once now so the conversation contains the expandable Test Gate component; that tool only attaches the embedded component and must not open a system browser. Never call open_test_gate_browser automatically. Browser interaction, Computer Use, screenshots, UI inspection, builds, linters, type checks, and development servers remain allowed. Tell the user that “运行待处理测试” starts it locally, “测试状态” checks it, “打开 Test Gate” reopens the embedded panel, “浏览器打开 Test Gate” explicitly opens a separate window, and “跳过待处理测试” explicitly skips it. New ordinary prompts are held before model invocation until the test passes or the user explicitly skips it.`,
       },
     }));
   } catch {

@@ -170,6 +170,7 @@ test('server exposes an embedded dashboard and app-only runner controls', async 
   const listed = await client.receive();
   assert.deepEqual(listed.result.tools.map((tool) => tool.name), [
     'open_test_gate',
+    'open_test_gate_browser',
     'get_test_gate_state',
     'start_test_suite',
     'cancel_test_job',
@@ -178,7 +179,7 @@ test('server exposes an embedded dashboard and app-only runner controls', async 
     'get_test_job_summary',
   ]);
   assert.equal(listed.result.tools[0]._meta.ui.resourceUri, dashboardUri);
-  for (const tool of listed.result.tools.slice(1, 6)) assert.deepEqual(tool._meta.ui.visibility, ['app']);
+  for (const tool of listed.result.tools.slice(2, 7)) assert.deepEqual(tool._meta.ui.visibility, ['app']);
   assert.equal(listed.result.tools.some((tool) => /command|shell|executable/i.test(tool.name)), false);
 
   const openTool = listed.result.tools[0];
@@ -186,16 +187,23 @@ test('server exposes an embedded dashboard and app-only runner controls', async 
   assert.equal(openTool.inputSchema.properties.createCompletionGate, undefined);
   const opened = await call(client, 3, 'open_test_gate', { projectPath: item.project });
   assert.equal(opened.structuredContent.suiteCount, 2);
-  assert.equal(opened.structuredContent.browserOpened, false);
-  assert.equal(opened.structuredContent.browserOpenError, null);
+  assert.equal(opened.structuredContent.browserOpened, undefined);
+  assert.equal(opened._meta.dashboardUrl, undefined);
   assert.match(opened.structuredContent.runtimePlatform, /^(Windows|macOS|Linux|WSL|[a-z0-9_-]+)$/i);
-  const response = await fetch(opened._meta.dashboardUrl);
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get('content-security-policy'), /default-src 'none'/);
-  const html = await response.text();
+  client.send({ jsonrpc: '2.0', id: 30, method: 'resources/read', params: { uri: dashboardUri } });
+  const resource = await client.receive();
+  const html = resource.result.contents[0].text;
   assert.equal(html, fs.readFileSync(dashboardPath, 'utf8'));
   assert.match(html, /id="gate-banner"/);
   assert.doesNotMatch(html, /LOCAL TEST RUNNER|zero-token|Test Gate 范围|Codex 不直接执行|交互验证继续放行/);
+
+  const browserOpened = await call(client, 31, 'open_test_gate_browser', { projectPath: item.project });
+  assert.equal(browserOpened.structuredContent.browserOpened, false);
+  assert.equal(browserOpened.structuredContent.browserOpenError, null);
+  const response = await fetch(browserOpened._meta.dashboardUrl);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-security-policy'), /default-src 'none'/);
+  assert.equal(await response.text(), html);
 
   const state = await call(client, 4, 'get_test_gate_state', { projectPath: item.project });
   assert.equal(state.structuredContent.gates[0].status, 'pending');

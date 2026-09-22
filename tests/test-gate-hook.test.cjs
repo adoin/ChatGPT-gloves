@@ -183,6 +183,10 @@ test('pending completion gate blocks a new task before model invocation and supp
   const open = JSON.parse(runPromptHook(root, data, '打开 Test Gate', 'gate-session').stdout);
   assert.equal(open.decision, undefined);
   assert.match(open.hookSpecificOutput.additionalContext, /Call open_test_gate/);
+  assert.match(open.hookSpecificOutput.additionalContext, /inside the conversation/);
+
+  const browserOpen = JSON.parse(runPromptHook(root, data, '浏览器打开 Test Gate', 'gate-session').stdout);
+  assert.match(browserOpen.hookSpecificOutput.additionalContext, /Call open_test_gate_browser/);
 
   const skipped = JSON.parse(runPromptHook(root, data, '跳过待处理测试', 'gate-session').stdout);
   assert.equal(skipped.decision, 'block');
