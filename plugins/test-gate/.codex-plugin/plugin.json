@@ -1,6 +1,6 @@
 {
   "name": "test-gate",
-  "version": "0.1.0+codex.20260922012707",
+  "version": "0.1.0+codex.20260922013228",
   "description": "Require non-interactive tests to pass or be explicitly skipped without model polling.",
   "author": {
     "name": "adoin",
@@ -20,12 +20,13 @@
   "interface": {
     "displayName": "Test Gate",
     "shortDescription": "Gate new work on deferred test results.",
-    "longDescription": "Blocks only non-interactive automated tests launched by Codex, runs them in a detached local dashboard, and prevents a new task from reaching the model until required tests pass or the user explicitly skips them. Interactive browser, screenshot, and UI verification remains available.",
+    "longDescription": "Blocks only non-interactive automated tests launched by Codex, runs them in a detached cross-platform local dashboard, and prevents a new task from reaching the model until required tests pass or the user explicitly skips them. Supports Windows, macOS, Linux, and WSL while keeping interactive browser, screenshot, and UI verification available.",
     "developerName": "adoin",
     "category": "Productivity",
     "capabilities": [
       "Non-interactive test guard",
       "Detached local test runner",
+      "Windows, macOS, Linux, and WSL",
       "Task completion gate",
       "Pre-model prompt blocking",
       "Embedded test dashboard",

@@ -817,7 +817,8 @@
           currentState = state;
           projectPath = state.projectRoot;
           elements.projectPath.textContent = state.projectRoot;
-          elements.connection.textContent = location.protocol === 'http:' ? '本地浏览器面板' : 'Codex 嵌入面板';
+          const surface = location.protocol === 'http:' ? '本地浏览器面板' : 'Codex 嵌入面板';
+          elements.connection.textContent = `${surface} · ${state.runtimePlatform || 'Local'}`;
           renderSuites(state.suites || []);
           renderGate(state.gates || []);
           renderJobs(state.jobs || []);

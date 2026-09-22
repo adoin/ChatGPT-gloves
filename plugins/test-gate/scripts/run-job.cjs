@@ -15,16 +15,16 @@ function readStatus(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
-function killTree(child) {
+function killTree(child, force = false) {
   if (!child || child.exitCode !== null) return;
   if (process.platform === 'win32') {
     spawnSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
     return;
   }
   try {
-    process.kill(-child.pid, 'SIGTERM');
+    process.kill(-child.pid, force ? 'SIGKILL' : 'SIGTERM');
   } catch {
-    try { child.kill('SIGTERM'); } catch { /* already stopped */ }
+    try { child.kill(force ? 'SIGKILL' : 'SIGTERM'); } catch { /* already stopped */ }
   }
 }
 
@@ -73,15 +73,26 @@ function main() {
   });
 
   let timedOut = false;
+  let terminationStarted = false;
+  let hardKillTimer = null;
+  const requestTermination = () => {
+    if (terminationStarted) return;
+    terminationStarted = true;
+    killTree(child);
+    if (process.platform !== 'win32') {
+      hardKillTimer = setTimeout(() => killTree(child, true), 5_000);
+      hardKillTimer.unref();
+    }
+  };
   const timer = setTimeout(() => {
     timedOut = true;
-    killTree(child);
+    requestTermination();
   }, spec.timeoutMs);
   timer.unref();
 
   const cancellationPoll = setInterval(() => {
     try {
-      if (readStatus(statusPath).cancelRequestedAt) killTree(child);
+      if (readStatus(statusPath).cancelRequestedAt) requestTermination();
     } catch {
       // A transient read failure should not terminate the test process.
     }
@@ -90,6 +101,7 @@ function main() {
 
   child.on('error', (error) => {
     clearTimeout(timer);
+    if (hardKillTimer) clearTimeout(hardKillTimer);
     clearInterval(cancellationPoll);
     fs.writeSync(stderrFd, `\nTest Gate could not start the process: ${error.message}\n`);
     fs.closeSync(stdoutFd);
@@ -99,6 +111,7 @@ function main() {
 
   child.on('exit', (code, signal) => {
     clearTimeout(timer);
+    if (hardKillTimer) clearTimeout(hardKillTimer);
     clearInterval(cancellationPoll);
     fs.closeSync(stdoutFd);
     fs.closeSync(stderrFd);

@@ -137,6 +137,29 @@ test('Windows command resolution prefers a runnable .cmd shim over an extensionl
   assert.match(invocation.args.at(-1), /test:ssr/i);
 });
 
+test('macOS and Linux command resolution prefers the project-local executable and stays shell-free', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'test-gate-posix-command-'));
+  const localBin = path.join(root, 'node_modules', '.bin');
+  const pathBin = path.join(root, 'path-bin');
+  fs.mkdirSync(localBin, { recursive: true });
+  fs.mkdirSync(pathBin);
+  const localTool = path.join(localBin, 'vitest');
+  const pathTool = path.join(pathBin, 'vitest');
+  fs.writeFileSync(localTool, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  fs.writeFileSync(pathTool, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  fs.chmodSync(localTool, 0o755);
+  fs.chmodSync(pathTool, 0o755);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  for (const platform of ['darwin', 'linux']) {
+    const invocation = prepareSpawn('vitest', ['run'], { cwd: root, env: { PATH: pathBin }, platform });
+    assert.equal(invocation.resolvedExecutable, fs.realpathSync(localTool));
+    assert.equal(invocation.command, fs.realpathSync(localTool));
+    assert.deepEqual(invocation.args, ['run']);
+    assert.equal(invocation.via, 'direct');
+    assert.equal(invocation.windowsVerbatimArguments, false);
+  }
+});
+
 test('server exposes an embedded dashboard and app-only runner controls', async (t) => {
   const item = fixture();
   createPendingGate(item);
@@ -163,6 +186,8 @@ test('server exposes an embedded dashboard and app-only runner controls', async 
   const opened = await call(client, 3, 'open_test_gate', { projectPath: item.project, createCompletionGate: false });
   assert.equal(opened.structuredContent.suiteCount, 2);
   assert.equal(opened.structuredContent.browserOpened, false);
+  assert.equal(opened.structuredContent.browserOpenError, null);
+  assert.match(opened.structuredContent.runtimePlatform, /^(Windows|macOS|Linux|WSL|[a-z0-9_-]+)$/i);
   const response = await fetch(opened._meta.dashboardUrl);
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-security-policy'), /default-src 'none'/);

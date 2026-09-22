@@ -4,12 +4,11 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
-const os = require('node:os');
 const path = require('node:path');
 const readline = require('node:readline');
 const { spawn, spawnSync } = require('node:child_process');
 const { projectState, realDirectory } = require('../scripts/test-gate-core.cjs');
-const { listProjectGates, skipProjectGate } = require('../scripts/test-gate-gates.cjs');
+const { dataDirectory, listProjectGates, skipProjectGate } = require('../scripts/test-gate-gates.cjs');
 const { resolveExecutable } = require('../scripts/spawn-command.cjs');
 
 const SERVER_NAME = 'test-gate';
@@ -29,24 +28,17 @@ function hasControlCharacters(value) {
   return /[\u0000-\u001f\u007f]/.test(value);
 }
 
-function dataDirectory() {
-  const overridden = process.env.TEST_GATE_DATA_DIR || process.env.PLUGIN_DATA;
-  if (overridden) {
-    if (!path.isAbsolute(overridden)) throw new Error('Test Gate data directory must be absolute.');
-    return path.resolve(overridden);
+function runtimePlatformLabel() {
+  if (process.platform === 'win32') return 'Windows';
+  if (process.platform === 'darwin') return 'macOS';
+  if (process.platform === 'linux') {
+    if (process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP) return 'WSL';
+    try {
+      if (/microsoft|wsl/i.test(fs.readFileSync('/proc/version', 'utf8'))) return 'WSL';
+    } catch { /* ordinary Linux or unavailable procfs */ }
+    return 'Linux';
   }
-  if (process.platform === 'win32') {
-    if (!process.env.LOCALAPPDATA || !path.isAbsolute(process.env.LOCALAPPDATA)) {
-      throw new Error('LOCALAPPDATA must identify an absolute directory.');
-    }
-    return path.join(process.env.LOCALAPPDATA, 'OpenAI', 'Codex', 'test-gate');
-  }
-  if (process.platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'Application Support', 'OpenAI', 'Codex', 'test-gate');
-  }
-  const stateRoot = process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state');
-  if (!path.isAbsolute(stateRoot)) throw new Error('XDG_STATE_HOME must be absolute when set.');
-  return path.join(stateRoot, 'openai-codex', 'test-gate');
+  return process.platform;
 }
 
 function ensureDataDirectory() {
@@ -152,6 +144,7 @@ function stateForProject(projectPath) {
     suites: state.suites.map(publicSuite),
     jobs: listJobs(state.projectRoot),
     gates: listProjectGates(state.projectRoot),
+    runtimePlatform: runtimePlatformLabel(),
   };
 }
 
@@ -386,23 +379,57 @@ function ensureDashboardServer() {
   return dashboardServerReady;
 }
 
-function openInSystemBrowser(url) {
-  if (process.env.TEST_GATE_SKIP_BROWSER_OPEN === '1') return Promise.resolve(false);
-  let launcher;
+function browserLaunchers(url) {
   if (process.platform === 'win32') {
     const edgeCandidates = [process.env['ProgramFiles(x86)'], process.env.ProgramFiles]
       .filter(Boolean)
       .map((root) => path.join(root, 'Microsoft', 'Edge', 'Application', 'msedge.exe'));
     const edgePath = edgeCandidates.find((candidate) => fs.existsSync(candidate));
-    launcher = edgePath ? { command: edgePath, args: [`--app=${url}`, '--new-window', '--no-first-run'] } : { command: 'explorer.exe', args: [url] };
-  } else {
-    launcher = process.platform === 'darwin' ? { command: 'open', args: [url] } : { command: 'xdg-open', args: [url] };
+    const explorerPath = path.join(process.env.SystemRoot || 'C:\\Windows', 'explorer.exe');
+    return [
+      ...(edgePath ? [{ command: edgePath, args: [`--app=${url}`, '--new-window', '--no-first-run'] }] : []),
+      { command: explorerPath, args: [url] },
+    ];
   }
-  return new Promise((resolve, reject) => {
-    const child = spawn(launcher.command, launcher.args, { detached: true, stdio: 'ignore', windowsHide: true });
-    child.once('error', (error) => reject(new Error(`Could not open Test Gate: ${error.message}`)));
-    child.once('spawn', () => { child.unref(); resolve(true); });
-  });
+  if (process.platform === 'darwin') return [{ command: 'open', args: [url] }];
+  const wsl = runtimePlatformLabel() === 'WSL';
+  return [
+    ...(wsl ? [{ command: 'wslview', args: [url] }, { command: 'explorer.exe', args: [url] }] : []),
+    { command: 'xdg-open', args: [url] },
+    { command: 'gio', args: ['open', url] },
+    { command: 'sensible-browser', args: [url] },
+  ];
+}
+
+async function openInSystemBrowser(url) {
+  if (process.env.TEST_GATE_SKIP_BROWSER_OPEN === '1') return { opened: false, error: null };
+  if (process.platform === 'linux' && runtimePlatformLabel() !== 'WSL' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
+    return {
+      opened: false,
+      error: 'No Linux graphical display is available. The embedded MCP UI can still be used.',
+    };
+  }
+  let lastError = null;
+  for (const candidate of browserLaunchers(url)) {
+    let resolvedCommand;
+    try {
+      resolvedCommand = resolveExecutable(candidate.command, { cwd: process.cwd(), env: process.env });
+    } catch (error) {
+      lastError = error.message;
+      continue;
+    }
+    const outcome = await new Promise((resolve) => {
+      const child = spawn(resolvedCommand, candidate.args, { detached: true, stdio: 'ignore', windowsHide: true });
+      child.once('error', (error) => resolve({ opened: false, error: error.message }));
+      child.once('spawn', () => { child.unref(); resolve({ opened: true, error: null }); });
+    });
+    if (outcome.opened) return outcome;
+    lastError = outcome.error;
+  }
+  return {
+    opened: false,
+    error: lastError || 'No supported graphical browser launcher is available. The embedded MCP UI can still be used.',
+  };
 }
 
 async function openDashboard(value) {
@@ -410,13 +437,19 @@ async function openDashboard(value) {
   const state = stateForProject(value.projectPath);
   const baseUrl = await ensureDashboardServer();
   const dashboardUrl = `${baseUrl}?projectPath=${encodeURIComponent(state.projectRoot)}`;
-  const browserOpened = await openInSystemBrowser(dashboardUrl);
+  const browser = await openInSystemBrowser(dashboardUrl);
   return {
     content: [{
       type: 'text',
       text: `Test Gate is ready for ${state.projectRoot}. ${state.suites.length} non-interactive suite(s) can be run outside the Codex turn. Do not poll their status from the model.`,
     }],
-    structuredContent: { projectRoot: state.projectRoot, suiteCount: state.suites.length, browserOpened },
+    structuredContent: {
+      projectRoot: state.projectRoot,
+      suiteCount: state.suites.length,
+      browserOpened: browser.opened,
+      browserOpenError: browser.error,
+      runtimePlatform: state.runtimePlatform,
+    },
     _meta: { ui: { resourceUri: DASHBOARD_URI }, 'openai/outputTemplate': DASHBOARD_URI, dashboardUrl },
   };
 }
@@ -450,8 +483,14 @@ const tools = [
     },
     outputSchema: {
       type: 'object',
-      properties: { projectRoot: { type: 'string' }, suiteCount: { type: 'integer' }, browserOpened: { type: 'boolean' } },
-      required: ['projectRoot', 'suiteCount', 'browserOpened'],
+      properties: {
+        projectRoot: { type: 'string' },
+        suiteCount: { type: 'integer' },
+        browserOpened: { type: 'boolean' },
+        browserOpenError: { type: ['string', 'null'] },
+        runtimePlatform: { type: 'string' },
+      },
+      required: ['projectRoot', 'suiteCount', 'browserOpened', 'browserOpenError', 'runtimePlatform'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },

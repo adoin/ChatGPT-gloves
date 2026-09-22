@@ -74,6 +74,19 @@ On Windows, package managers are commonly exposed as `npm.cmd`, `pnpm.cmd`, or `
 
 If an executable cannot be resolved, the dashboard marks it as unavailable and disables that suite's Run button instead of creating a doomed background job.
 
+## Platform support
+
+Test Gate is designed for local Codex environments on Windows, macOS, Linux, and WSL2:
+
+| Area | Windows | macOS | Linux / WSL2 |
+|---|---|---|---|
+| Command resolution | Project `.bin`, inherited `PATH`, `.exe/.com/.cmd/.bat` shims | Project `.bin`, inherited `PATH`, executable files | Project `.bin`, inherited `PATH`, executable files |
+| Process cancellation | `taskkill /T /F` | POSIX process group, then `SIGKILL` fallback | POSIX process group, then `SIGKILL` fallback |
+| Durable state | `%LOCALAPPDATA%\\OpenAI\\Codex\\test-gate` | `~/Library/Application Support/OpenAI/Codex/test-gate` | `${XDG_STATE_HOME:-~/.local/state}/openai-codex/test-gate` |
+| Browser fallback | Edge app window or Explorer | `open` | `xdg-open`, `gio open`, or `sensible-browser`; WSL also tries `wslview` |
+
+The MCP Apps UI remains the primary portable interface. Failure to launch a separate graphical browser is non-fatal, which keeps the embedded panel usable on headless Linux, remote shells, minimal containers, and WSL installations without a browser launcher.
+
 ## Command policy
 
 The command hook listens only to the Codex `Bash`/unified-exec tool path. It blocks well-known non-interactive runners such as Jest, Vitest, Pytest, Playwright Test, Cypress Run, Cargo Test, Go Test, and package-manager test scripts. It explicitly permits browser-launch, Playwright screenshot/codegen/show-report, and Cypress open commands. The prompt hook is task-scoped by Codex session id, so a pending gate in one task does not block an unrelated task in the same project.
