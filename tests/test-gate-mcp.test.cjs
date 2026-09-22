@@ -14,6 +14,7 @@ const serverPath = path.join(pluginRoot, 'mcp', 'server.cjs');
 const hookPath = path.join(pluginRoot, 'scripts', 'pre-tool-use.cjs');
 const dashboardPath = path.join(pluginRoot, 'mcp', 'test-gate.html');
 const dashboardUri = 'ui://test-gate/dashboard-v1.html';
+const { prepareSpawn, resolveExecutable } = require(path.join(pluginRoot, 'scripts', 'spawn-command.cjs'));
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'test-gate-mcp-'));
@@ -118,6 +119,24 @@ test('bundled MCP config launches Test Gate from the plugin root', () => {
   assert.equal(JSON.parse(result.stdout.trim()).result.serverInfo.name, 'test-gate');
 });
 
+test('Windows command resolution prefers a runnable .cmd shim over an extensionless Unix shim', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'test-gate-command-'));
+  const bin = path.join(root, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'pnpm'), '#!/bin/sh\n');
+  fs.writeFileSync(path.join(bin, 'pnpm.cmd'), '@echo off\r\n');
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const env = { PATH: bin, ComSpec: 'C:\\Windows\\System32\\cmd.exe', SystemRoot: 'C:\\Windows' };
+  const resolved = resolveExecutable('pnpm', { cwd: root, env, platform: 'win32' });
+  assert.equal(resolved.toLowerCase(), path.join(bin, 'pnpm.cmd').toLowerCase());
+  const invocation = prepareSpawn('pnpm', ['run', 'test:ssr'], { cwd: root, env, platform: 'win32' });
+  assert.equal(invocation.via, 'cmd-shim');
+  assert.equal(invocation.command, env.ComSpec);
+  assert.equal(invocation.windowsVerbatimArguments, true);
+  assert.match(invocation.args.at(-1), /pnpm\.cmd/i);
+  assert.match(invocation.args.at(-1), /test:ssr/i);
+});
+
 test('server exposes an embedded dashboard and app-only runner controls', async (t) => {
   const item = fixture();
   createPendingGate(item);
@@ -153,6 +172,8 @@ test('server exposes an embedded dashboard and app-only runner controls', async 
 
   const state = await call(client, 4, 'get_test_gate_state', { projectPath: item.project });
   assert.equal(state.structuredContent.gates[0].status, 'pending');
+  assert.equal(state.structuredContent.suites.every((suite) => suite.executableAvailable), true);
+  assert.equal(state.structuredContent.suites.every((suite) => typeof suite.resolvedExecutable === 'string'), true);
   const refused = await call(client, 5, 'skip_test_gate', { projectPath: item.project, gateId: state.structuredContent.gates[0].gateId, confirmSkip: false });
   assert.equal(refused.isError, true);
   const skipped = await call(client, 6, 'skip_test_gate', { projectPath: item.project, gateId: state.structuredContent.gates[0].gateId, confirmSkip: true });

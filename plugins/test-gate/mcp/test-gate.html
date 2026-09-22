@@ -632,6 +632,13 @@
           showToast('没有可运行套件，请先配置 .codex/test-gate.json。');
           return;
         }
+        const unavailable = ids
+          .map((id) => currentState?.suites?.find((suite) => suite.id === id))
+          .filter((suite) => suite && !suite.executableAvailable);
+        if (unavailable.length) {
+          showToast(`本地执行器不可用：${unavailable.map((suite) => suite.label).join('、')}。`);
+          return;
+        }
         clickedButton.disabled = true;
         try {
           if ('Notification' in window && Notification.permission === 'default') void Notification.requestPermission();
@@ -732,8 +739,16 @@
           foot.className = 'suite-foot';
           const meta = document.createElement('div');
           meta.className = 'meta';
-          meta.textContent = `${suite.source === 'config' ? '项目配置' : '自动发现'} · 最长 ${suite.timeoutMinutes} 分钟`;
+          meta.textContent = suite.executableAvailable
+            ? `${suite.source === 'config' ? '项目配置' : '自动发现'} · 执行器已连接 · 最长 ${suite.timeoutMinutes} 分钟`
+            : `${suite.source === 'config' ? '项目配置' : '自动发现'} · 执行器不可用`;
+          if (suite.resolutionError) meta.title = suite.resolutionError;
           const run = button('运行', 'primary', (event) => startSuite(suite.id, event.currentTarget));
+          if (!suite.executableAvailable) {
+            run.disabled = true;
+            run.textContent = '执行器缺失';
+            run.title = suite.resolutionError || '本地环境中找不到该执行器。';
+          }
           foot.append(meta, run);
           card.append(title, command, foot);
           elements.suites.append(card);

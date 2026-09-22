@@ -66,6 +66,14 @@ For other commands, add `.codex/test-gate.json`:
 
 Suite commands use an executable plus argument array and run with `shell: false`. A configured working directory must remain inside the project. Invalid configuration fails open in the hook so a monitoring error cannot block unrelated Codex work; the dashboard reports configuration errors directly.
 
+## Local command resolution
+
+The browser dashboard talks to the loopback MCP server, and the MCP server launches a detached local worker. Before enabling a Run button, the server resolves the suite executable from the project's `node_modules/.bin` directory and then from the local environment inherited by the plugin.
+
+On Windows, package managers are commonly exposed as `npm.cmd`, `pnpm.cmd`, or `yarn.cmd`. Test Gate resolves those shims explicitly instead of asking `CreateProcess` to launch the extensionless Unix shim. Batch shims run through a fixed `cmd.exe` adapter with escaped argument-array values; project configuration still cannot provide an arbitrary shell command string. On macOS and Linux, resolved executables run directly.
+
+If an executable cannot be resolved, the dashboard marks it as unavailable and disables that suite's Run button instead of creating a doomed background job.
+
 ## Command policy
 
 The command hook listens only to the Codex `Bash`/unified-exec tool path. It blocks well-known non-interactive runners such as Jest, Vitest, Pytest, Playwright Test, Cypress Run, Cargo Test, Go Test, and package-manager test scripts. It explicitly permits browser-launch, Playwright screenshot/codegen/show-report, and Cypress open commands. The prompt hook is task-scoped by Codex session id, so a pending gate in one task does not block an unrelated task in the same project.

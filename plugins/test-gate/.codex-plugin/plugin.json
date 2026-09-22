@@ -1,6 +1,6 @@
 {
   "name": "test-gate",
-  "version": "0.1.0+codex.20260921040402",
+  "version": "0.1.0+codex.20260922012707",
   "description": "Require non-interactive tests to pass or be explicitly skipped without model polling.",
   "author": {
     "name": "adoin",

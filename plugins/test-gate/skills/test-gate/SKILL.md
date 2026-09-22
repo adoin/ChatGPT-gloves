@@ -36,3 +36,5 @@ Do not reinterpret a skip: only the explicit control phrase or the dashboard's c
 When the user later asks Codex to analyze a completed Test Gate job, call `get_test_job_summary` once for the exact job id. Never call it repeatedly to wait for completion.
 
 If Test Gate has no discovered suites, explain that it discovers common package scripts and project types, and that the project can define explicit suites in `.codex/test-gate.json`. Do not fall back to running the tests yourself.
+
+If the dashboard reports an unavailable executor, explain that Test Gate resolves project-local `node_modules/.bin` entries and inherited local PATH entries, including Windows `.cmd` shims. Ask the user to install or expose the missing runner locally; do not bypass the gate by running the suite through a different shell tool.

@@ -10,6 +10,7 @@ const readline = require('node:readline');
 const { spawn, spawnSync } = require('node:child_process');
 const { projectState, realDirectory } = require('../scripts/test-gate-core.cjs');
 const { listProjectGates, skipProjectGate } = require('../scripts/test-gate-gates.cjs');
+const { resolveExecutable } = require('../scripts/spawn-command.cjs');
 
 const SERVER_NAME = 'test-gate';
 const SERVER_VERSION = '0.1.0';
@@ -96,6 +97,13 @@ function readJson(filePath) {
 }
 
 function publicSuite(suite) {
+  let resolvedExecutable = null;
+  let resolutionError = null;
+  try {
+    resolvedExecutable = resolveExecutable(suite.executable, { cwd: suite.cwd, env: process.env });
+  } catch (error) {
+    resolutionError = error.message;
+  }
   return {
     id: suite.id,
     label: suite.label,
@@ -103,6 +111,9 @@ function publicSuite(suite) {
     cwd: suite.relativeCwd,
     timeoutMinutes: Math.round(suite.timeoutMs / 60_000),
     source: suite.source,
+    executableAvailable: Boolean(resolvedExecutable),
+    resolvedExecutable,
+    resolutionError,
   };
 }
 
@@ -148,6 +159,7 @@ function startSuite(value) {
   const state = projectState(value?.projectPath);
   const suite = state.suites.find((candidate) => candidate.id === value?.suiteId);
   if (!suite) throw new Error(`Unknown Test Gate suite: ${value?.suiteId || '(missing)'}.`);
+  resolveExecutable(suite.executable, { cwd: suite.cwd, env: process.env });
   const jobId = crypto.randomUUID();
   const paths = jobPaths(state.projectRoot, jobId);
   fs.mkdirSync(paths.directory, { recursive: false, mode: 0o700 });

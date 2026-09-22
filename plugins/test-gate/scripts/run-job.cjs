@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
+const { prepareSpawn } = require('./spawn-command.cjs');
 
 function atomicWrite(filePath, value) {
   const temporary = `${filePath}.${process.pid}.${Date.now()}.tmp`;
@@ -47,13 +48,19 @@ function main() {
   const spec = JSON.parse(fs.readFileSync(specPath, 'utf8'));
   const stdoutFd = fs.openSync(stdoutPath, 'a', 0o600);
   const stderrFd = fs.openSync(stderrPath, 'a', 0o600);
-  const child = spawn(spec.executable, spec.args, {
+  const childEnvironment = { ...process.env, TEST_GATE_JOB_ID: spec.jobId };
+  const invocation = prepareSpawn(spec.executable, spec.args, {
     cwd: spec.cwd,
-    env: { ...process.env, TEST_GATE_JOB_ID: spec.jobId },
+    env: childEnvironment,
+  });
+  const child = spawn(invocation.command, invocation.args, {
+    cwd: spec.cwd,
+    env: childEnvironment,
     detached: process.platform !== 'win32',
     stdio: ['ignore', stdoutFd, stderrFd],
     windowsHide: true,
     shell: false,
+    windowsVerbatimArguments: invocation.windowsVerbatimArguments,
   });
   atomicWrite(statusPath, {
     ...readStatus(statusPath),
@@ -61,6 +68,8 @@ function main() {
     startedAt: new Date().toISOString(),
     workerPid: process.pid,
     processPid: child.pid,
+    resolvedExecutable: invocation.resolvedExecutable,
+    invocationMode: invocation.via,
   });
 
   let timedOut = false;
@@ -111,6 +120,8 @@ try {
   try {
     const statusPath = process.argv[2];
     if (statusPath && path.isAbsolute(statusPath) && fs.existsSync(statusPath)) {
+      const stderrPath = path.join(path.dirname(statusPath), 'stderr.log');
+      try { fs.appendFileSync(stderrPath, `\nTest Gate could not start the process: ${error.message}\n`, 'utf8'); } catch { /* status still records the error */ }
       finish(statusPath, { status: 'failed', exitCode: null, signal: null, error: error.message });
     }
   } finally {
