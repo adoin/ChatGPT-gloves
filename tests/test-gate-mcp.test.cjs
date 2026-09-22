@@ -194,6 +194,7 @@ test('server exposes an embedded dashboard and app-only runner controls', async 
   const html = await response.text();
   assert.equal(html, fs.readFileSync(dashboardPath, 'utf8'));
   assert.match(html, /id="gate-banner"/);
+  assert.doesNotMatch(html, /LOCAL TEST RUNNER|zero-token|Test Gate 范围|Codex 不直接执行|交互验证继续放行/);
 
   const state = await call(client, 4, 'get_test_gate_state', { projectPath: item.project });
   assert.equal(state.structuredContent.gates[0].status, 'pending');

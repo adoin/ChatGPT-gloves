@@ -57,105 +57,8 @@
     .shell {
       width: min(100%, 980px);
       margin: 0 auto;
-      padding: 28px 22px 42px;
+      padding: 18px 22px 32px;
     }
-
-    .hero {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 24px;
-      margin-bottom: 24px;
-    }
-
-    .eyebrow {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 10px;
-      color: var(--accent);
-      font-size: 12px;
-      font-weight: 760;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-    }
-
-    .eyebrow::before {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: currentColor;
-      content: "";
-      box-shadow: 0 0 0 5px color-mix(in srgb, currentColor 12%, transparent);
-    }
-
-    h1 {
-      margin: 0;
-      font-size: clamp(26px, 4vw, 42px);
-      line-height: 1;
-      letter-spacing: -0.045em;
-    }
-
-    .intro {
-      max-width: 650px;
-      margin: 13px 0 0;
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.65;
-    }
-
-    .zero-token {
-      flex: 0 0 auto;
-      padding: 10px 13px;
-      border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--line));
-      border-radius: 999px;
-      background: color-mix(in srgb, var(--accent) 8%, var(--paper));
-      color: var(--accent);
-      font-size: 12px;
-      font-weight: 720;
-      white-space: nowrap;
-    }
-
-    .scope {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 1px;
-      overflow: hidden;
-      margin-bottom: 22px;
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      background: var(--line);
-      box-shadow: var(--shadow);
-    }
-
-    .scope-item {
-      min-height: 84px;
-      padding: 16px 18px;
-      background: var(--paper);
-    }
-
-    .scope-label {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      margin-bottom: 5px;
-      font-size: 13px;
-      font-weight: 760;
-    }
-
-    .scope-label span {
-      display: grid;
-      width: 20px;
-      height: 20px;
-      place-items: center;
-      border-radius: 50%;
-      font-size: 12px;
-    }
-
-    .blocked span { background: color-mix(in srgb, var(--danger) 13%, transparent); color: var(--danger); }
-    .allowed span { background: color-mix(in srgb, var(--success) 13%, transparent); color: var(--success); }
-
-    .scope-copy { color: var(--muted); font-size: 12px; line-height: 1.5; }
 
     .project-bar {
       display: flex;
@@ -416,10 +319,7 @@
     #toast.show { transform: translateY(0); opacity: 1; }
 
     @media (max-width: 680px) {
-      .shell { padding: 20px 14px 32px; }
-      .hero { display: block; }
-      .zero-token { display: inline-flex; margin-top: 15px; }
-      .scope { grid-template-columns: 1fr; }
+      .shell { padding: 14px; }
       .gate-banner { grid-template-columns: auto minmax(0, 1fr); }
       .gate-actions { grid-column: 1 / -1; }
       .job { grid-template-columns: minmax(0, 1fr) auto; }
@@ -430,26 +330,6 @@
 </head>
 <body>
   <main class="shell">
-    <header class="hero">
-      <div>
-        <div class="eyebrow">Local test runner</div>
-        <h1>Test Gate</h1>
-        <p class="intro">把耗时的自动化测试移出 Codex 回合。你在这里启动、观察和复制结果；浏览器点击、页面检查与截图仍由 AI 正常执行。</p>
-      </div>
-      <div class="zero-token">测试运行期间 · 零模型轮询</div>
-    </header>
-
-    <section class="scope" aria-label="Test Gate 范围">
-      <div class="scope-item">
-        <div class="scope-label blocked"><span>×</span>Codex 不直接执行</div>
-        <div class="scope-copy">单元测试、集成测试、E2E、验收测试、基准测试及其自动化 Runner。</div>
-      </div>
-      <div class="scope-item">
-        <div class="scope-label allowed"><span>✓</span>交互验证继续放行</div>
-        <div class="scope-copy">浏览器与 Computer Use、点击页面、截图、视觉检查、开发服务器、构建、lint 和类型检查。</div>
-      </div>
-    </section>
-
     <div class="project-bar">
       <div id="project-path" class="project-path">等待项目上下文…</div>
       <div id="connection" class="connection">本地面板</div>
