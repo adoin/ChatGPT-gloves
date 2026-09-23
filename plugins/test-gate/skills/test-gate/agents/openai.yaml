@@ -1,7 +1,0 @@
-interface:
-  display_name: "Test Gate"
-  short_description: "Run automated tests outside Codex turns"
-  brand_color: "#0B6B57"
-  default_prompt: "Use $test-gate to hand this project's non-interactive tests to the local runner."
-policy:
-  allow_implicit_invocation: true

@@ -31,6 +31,14 @@ For a specification update that must remain in the current task, use `$spec-upda
 - If a concise structured restatement is useful, keep the untouched original text first and clearly label the restatement as interpretation in the same language.
 - Preserve intentionally mixed technical identifiers such as component names, APIs, file paths, and code exactly as written.
 
+## Task environment continuity
+
+- A handoff continues the same project workspace by default. When the source task runs in the saved project checkout, create the fresh task with the project's direct local environment (`environment: { type: "local" }`) so its working directory remains the saved checkout.
+- Never select a managed worktree merely because the project is a Git repository, the checkout is clean, a branch or commit is available, or worktree is the task-creation tool's normal default.
+- Use `environment: { type: "worktree" }` only when the user explicitly asks for an isolated worktree. Tell the user that project setup and startup scripts will then run inside that separate worktree.
+- If the source task already runs in a managed worktree and continuing the exact directory matters, do not guess or silently create another worktree. Report the environment constraint and ask the user which checkout should own the fresh task.
+- After task creation, wait for the task to become ready and verify its reported working directory before sending it implementation work. If it differs from the intended source checkout, stop the new task from running commands and correct the placement or report the mismatch.
+
 ## Handoff workflow
 
 1. Identify the repository root, current working directory, active branch, worktree state, and the applicable `AGENTS.md` files.
@@ -41,14 +49,15 @@ For a specification update that must remain in the current task, use `$spec-upda
 6. Create or update the smallest applicable active project specification under `.agents/notes/active/` using [the project-specification and starter-prompt templates](references/handoff-template.md). Use `kind: project-specification`, a stable descriptive filename, and the user's language. Do not create a `conversation-handoff` document.
 7. Leave each applicable `AGENTS.md` as a compact instruction and navigation layer: retain durable cross-task rules and material that no specification covers, plus links telling future agents where to read active and prohibited specifications. Do not duplicate specification detail there. Create a nested `AGENTS.md` only for durable rules that apply to that directory across future tasks.
 8. Verify the project specifications as durable documentation: a new maintainer must be able to understand the project's purpose, constraints, and approved unfinished outcomes without inheriting stale conversation state. Confirm that extracted `AGENTS.md` instructions remain discoverable with unchanged scope.
-9. If the current host exposes a task-creation tool, create a new task in the same project after the specification is saved. Preserve the existing checkout when uncommitted changes must remain visible; otherwise follow the host's normal worktree behavior.
+9. If the current host exposes a task-creation tool, create a new task in the same project after the specification is saved. Use the saved project's direct local environment by default, regardless of whether the checkout is clean or dirty. Use a worktree only with the user's explicit request, following the environment-continuity rules above.
 10. Build the fresh task's starter prompt in the user's language. Include the user's current requirement in its original wording, the relevant specification paths, current working-tree state, completed and remaining work, validation status, material open questions, and one concrete first action. Do not paste the full project specification.
-11. Seed the new task with that starter prompt. If task creation is unavailable, return the exact specification paths and the ready-to-paste prompt unchanged.
+11. Wait until the new task is ready, verify that its working directory is the intended checkout, then seed it with the starter prompt. If task creation is unavailable, return the exact specification paths and the ready-to-paste prompt unchanged.
 
 ## Quality requirements
 
 - Keep confirmed requirements, durable decisions, and project-level unfinished goals in specifications; keep the current conversation's execution state, interruption point, and immediate next action in the starter prompt.
 - Verify that quoted user requirements and the starter prompt retain the user's original language.
+- Verify that the fresh task's working directory matches the intended source checkout and that no unrequested managed worktree was created.
 - Record rejected implementation attempts only when evidence shows why they failed. State the safe alternative.
 - Link to large images, generated assets, and logs by path; summarize their relevance instead of embedding or duplicating them.
 - Never claim a check passed unless its command or observed result is recorded.
