@@ -14,11 +14,13 @@ Local SSH Deploy opens a native form and securely persists named deployment prof
 
 ## Conversation Lifeboat
 
-Conversation Lifeboat watches transcript size, absolute input tokens, effective context pressure, and repeated compaction. At serious thresholds it asks the user whether to update durable project specifications and continue transient execution state in a fresh-task prompt.
+Conversation Lifeboat detects abnormal inline-image retention and recent connection/compaction failures. Token count, context-window percentage, transcript total size, stale/missing usage, and normal successful automatic compaction never independently trigger a warning or migration offer. The old token/ratio/total-size threshold variables are retired and ignored in 0.3.0.
 
-Absolute input-token thresholds default to 200,000 (warning), 300,000 (recommend migration), and 400,000 (critical), independently of the model's context-window percentage. Missing usage or usage older than 24 hours produces an uncertainty warning; old high usage still preserves its severity. These are operational thresholds, not model limits or proof that request size caused a failure.
+The monitor scans at most 16 MiB of the transcript tail (configurable, capped at 64 MiB), processes only actual response items rather than mirrored UI events, hashes image data in memory, and records metrics only. It detects inline data URLs, including serialized tool-output image URLs, and explicit generated-image result payloads. Observed image-byte counters accumulate across append-only checks without rescanning old history and reset at observed compaction boundaries. Gaps, large partial records, and content outside the sample mean these are lower-bound history estimates, not actual request-body measurements or proof that every image was resent.
 
-When the current user prompt reports reconnection, a disconnected stream, or a WebSocket timeout (Chinese or English), the next `UserPromptSubmit` check bypasses notification cooldown and requires a fresh assessment of connection errors and context usage. It does not automatically migrate or establish that context size caused the failure. Codex does not expose a reconnect hook here: this check runs when the report is submitted, not during an already-stalled network request. It reads no application log database and does not scan historical prompts for connection keywords. Migration still requires explicit confirmation.
+Defaults: 8 MiB observed retained image data, 4 MiB sampled duplicate data, or 8 MiB new image data within 10 minutes prompts a nonblocking review. At 24 MiB retained image data, at least 4 MiB of duplicates making up half the sampled image bytes, image risk plus a recent failure, or persistent failures, the assistant may briefly offer migration while continuing work. At 48 MiB retained image data severity becomes critical. These are configurable operational heuristics, not protocol limits. A single connection failure forces diagnosis, not a handoff offer. Successful token-usage events clear older failure signals; normal repeated compaction alone does not trigger migration.
+
+A current user report of reconnection, disconnected streams, or timeout bypasses notification cooldown for reassessment. Only current reports and explicit recent transcript error events are considered; historical assistant messages and command-output examples are not failure evidence. There is no live reconnect hook, so a stalled network request cannot be intercepted by this monitor. User-declined offers remain suppressed at the same or lower severity, including after cooldown. Explicit migration confirmation is still required. Pending token-based offers from 0.2.2 are cleared on upgrade.
 
 The plugin contains:
 
@@ -77,18 +79,15 @@ Defaults can be overridden through environment variables before Codex starts:
 
 | Variable | Default | Meaning |
 |---|---:|---|
-| `CONVERSATION_LIFEBOAT_WARN_MIB` | `512` | Show a low-frequency size warning |
-| `CONVERSATION_LIFEBOAT_WARN_INPUT_TOKENS` | `200000` | Absolute input-token warning threshold |
-| `CONVERSATION_LIFEBOAT_RECOMMEND_INPUT_TOKENS` | `300000` | Recommend migration at this absolute input size |
-| `CONVERSATION_LIFEBOAT_CRITICAL_INPUT_TOKENS` | `400000` | Critical absolute input size |
-| `CONVERSATION_LIFEBOAT_STALE_USAGE_HOURS` | `24` | Mark missing or older token usage as uncertain |
-| `CONVERSATION_LIFEBOAT_RECOMMEND_MIB` | `2048` | Recommend a fresh-task handoff |
-| `CONVERSATION_LIFEBOAT_CRITICAL_MIB` | `5120` | Treat the transcript as critical |
-| `CONVERSATION_LIFEBOAT_WARN_CONTEXT_RATIO` | `0.8` | Non-blocking context warning ratio |
-| `CONVERSATION_LIFEBOAT_RECOMMEND_CONTEXT_RATIO` | `0.85` | Context migration ratio |
-| `CONVERSATION_LIFEBOAT_CRITICAL_CONTEXT_RATIO` | `0.92` | Critical context ratio |
-| `CONVERSATION_LIFEBOAT_RECOMMEND_COMPACTIONS` | `4` | Compactions within the monitoring window before recommending migration |
+| `CONVERSATION_LIFEBOAT_WARN_IMAGE_MIB` | `8` | Review retained inline-image risk |
+| `CONVERSATION_LIFEBOAT_RECOMMEND_IMAGE_MIB` | `24` | Evidence supporting a nonblocking migration offer |
+| `CONVERSATION_LIFEBOAT_CRITICAL_IMAGE_MIB` | `48` | Escalate retained-image severity |
+| `CONVERSATION_LIFEBOAT_DUPLICATE_IMAGE_MIB` | `4` | Review duplicate payload risk; offer when duplicates are at least half of sampled image bytes |
+| `CONVERSATION_LIFEBOAT_IMAGE_GROWTH_MIB` | `8` | Review newly observed image-byte growth |
+| `CONVERSATION_LIFEBOAT_GROWTH_WINDOW_MINUTES` | `10` | Maximum interval for image-growth checks |
+| `CONVERSATION_LIFEBOAT_FAILURE_WINDOW_MINUTES` | `30` | Retain recent connection/compaction failure signals |
+| `CONVERSATION_LIFEBOAT_RECOMMEND_COMPACTIONS` | `4` | Supporting evidence only when failures also exist |
 | `CONVERSATION_LIFEBOAT_COMPACTION_WINDOW_HOURS` | `24` | Compaction monitoring window |
-| `CONVERSATION_LIFEBOAT_TAIL_MIB` | `8` | Maximum transcript tail read per check |
+| `CONVERSATION_LIFEBOAT_TAIL_MIB` | `16` | Bounded tail read, hard-capped at 64 MiB |
 
 Plugin state contains metrics only and is written under the plugin data directory supplied by Codex. Conversation text is not copied into that state.

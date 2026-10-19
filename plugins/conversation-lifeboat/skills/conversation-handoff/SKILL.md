@@ -9,6 +9,13 @@ Keep durable project intent and approved project-level TODOs in repository-owned
 
 For a specification update that must remain in the current task, use `$spec-update` instead.
 
+## Automatic health evidence
+
+- Do not recommend migration merely because token count, context-window percentage, transcript total size, or successful automatic compaction is high. Missing/stale token usage is diagnostic uncertainty, not a migration trigger.
+- Health hooks inspect bounded history samples for inline image bytes, duplicate image payloads, rapid image growth, and recent explicit connection/compaction failures. These are risk signals, not measured outgoing request bytes or proof of a Codex bug. Check whether compaction or a successful response has already cleared the problem.
+- When a user reports reconnection, reassess recent failures even if an earlier check was healthy. A single unexplained failure calls for diagnosis; persistent failures or abnormal image retention can justify a brief handoff offer. Continue the requested work rather than ending the turn solely to ask about migration.
+- Respect the user's choice to stay. Do not repeat an offer at the same or lower severity; explain any material escalation before offering again. A health warning never authorizes migration.
+
 ## Authorization boundary
 
 - Treat an explicit user request to migrate, hand off, or continue in a new task as authorization.

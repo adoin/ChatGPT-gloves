@@ -3,277 +3,212 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-
+const { createHash } = require('node:crypto');
 const MIB = 1024 * 1024;
-const GIB = 1024 * MIB;
-
-function numberFromEnv(name, fallback) {
-  const parsed = Number(process.env[name]);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+const POLICY = 3;
+function setting(name, fallback) {
+  const value = Number(process.env[`CONVERSATION_LIFEBOAT_${name}`]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
-
 const config = {
-  warnInputTokens: numberFromEnv('CONVERSATION_LIFEBOAT_WARN_INPUT_TOKENS', 200000),
-  recommendInputTokens: numberFromEnv('CONVERSATION_LIFEBOAT_RECOMMEND_INPUT_TOKENS', 300000),
-  criticalInputTokens: numberFromEnv('CONVERSATION_LIFEBOAT_CRITICAL_INPUT_TOKENS', 400000),
-  staleUsageMs: numberFromEnv('CONVERSATION_LIFEBOAT_STALE_USAGE_HOURS', 24) * 60 * 60 * 1000,
-  warnBytes: numberFromEnv('CONVERSATION_LIFEBOAT_WARN_MIB', 512) * MIB,
-  recommendBytes: numberFromEnv('CONVERSATION_LIFEBOAT_RECOMMEND_MIB', 2048) * MIB,
-  criticalBytes: numberFromEnv('CONVERSATION_LIFEBOAT_CRITICAL_MIB', 5120) * MIB,
-  warnContextRatio: numberFromEnv('CONVERSATION_LIFEBOAT_WARN_CONTEXT_RATIO', 0.8),
-  recommendContextRatio: numberFromEnv('CONVERSATION_LIFEBOAT_RECOMMEND_CONTEXT_RATIO', 0.85),
-  criticalContextRatio: numberFromEnv('CONVERSATION_LIFEBOAT_CRITICAL_CONTEXT_RATIO', 0.92),
-  compactionWindowMs: numberFromEnv('CONVERSATION_LIFEBOAT_COMPACTION_WINDOW_HOURS', 24) * 60 * 60 * 1000,
-  recommendCompactions: numberFromEnv('CONVERSATION_LIFEBOAT_RECOMMEND_COMPACTIONS', 4),
-  tailBytes: numberFromEnv('CONVERSATION_LIFEBOAT_TAIL_MIB', 8) * MIB,
+  tailBytes: Math.floor(Math.min(setting('TAIL_MIB', 16), 64) * MIB),
+  warnImages: setting('WARN_IMAGE_MIB', 8) * MIB,
+  recommendImages: setting('RECOMMEND_IMAGE_MIB', 24) * MIB,
+  criticalImages: setting('CRITICAL_IMAGE_MIB', 48) * MIB,
+  duplicateBytes: setting('DUPLICATE_IMAGE_MIB', 4) * MIB,
+  growthBytes: setting('IMAGE_GROWTH_MIB', 8) * MIB,
+  growthWindow: setting('GROWTH_WINDOW_MINUTES', 10) * 60000,
+  failureWindow: setting('FAILURE_WINDOW_MINUTES', 30) * 60000,
+  compactionWindow: setting('COMPACTION_WINDOW_HOURS', 24) * 3600000,
+  compactions: setting('RECOMMEND_COMPACTIONS', 4),
 };
-
 const ranks = { healthy: 0, warning: 1, recommend: 2, critical: 3 };
-
-function readHookInput() {
-  const raw = fs.readFileSync(0, 'utf8').trim();
-  return raw ? JSON.parse(raw) : {};
-}
-
-function safeSessionId(value) {
-  return String(value || 'unknown').replace(/[^a-zA-Z0-9._-]/g, '_');
-}
-
-function statePathFor(input) {
-  const root = process.env.PLUGIN_DATA || path.join(os.tmpdir(), 'conversation-lifeboat');
-  const directory = path.join(root, 'sessions');
-  fs.mkdirSync(directory, { recursive: true });
-  return path.join(directory, `${safeSessionId(input.session_id)}.json`);
-}
-
-function loadState(filePath) {
+const connectionPattern = /重连|重新连接|断线|连接中断|请求超时|一直.{0,8}(没响应|不响应|没回复|不回复)|reconnect(?:ing)?|stream disconnected|websocket.{0,40}(?:closed|timeout|1009)|idle timeout|10053|message too (?:big|large)/iu;
+const compactFailurePattern = /(?:compact(?:ion)?|压缩).{0,60}(?:fail|error|失败|出错)|(?:fail|error|失败).{0,60}(?:compact|压缩)/iu;
+const digest = value => createHash('sha256').update(value).digest('hex');
+function readTail(file) {
+  let fd;
   try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch {
-    return { compactions: [] };
-  }
-}
-
-function saveState(filePath, state) {
-  const temporary = `${filePath}.${process.pid}.tmp`;
-  fs.writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
-  fs.renameSync(temporary, filePath);
-}
-
-function transcriptSize(transcriptPath) {
-  if (!transcriptPath) return 0;
-  try {
-    return fs.statSync(transcriptPath).size;
-  } catch {
-    return 0;
-  }
-}
-
-function readTail(filePath, maximumBytes) {
-  if (!filePath || maximumBytes <= 0) return '';
-  let descriptor;
-  try {
-    descriptor = fs.openSync(filePath, 'r');
-    const size = fs.fstatSync(descriptor).size;
-    const length = Math.min(size, maximumBytes);
-    const buffer = Buffer.allocUnsafe(length);
-    fs.readSync(descriptor, buffer, 0, length, size - length);
+    fd = fs.openSync(file, 'r');
+    const size = fs.fstatSync(fd).size;
+    const length = Math.min(size, config.tailBytes);
+    const buffer = Buffer.alloc(length);
+    fs.readSync(fd, buffer, 0, length, size - length);
     let text = buffer.toString('utf8');
+    let discardedBytes = 0;
+    let startOffset = size - length;
     if (size > length) {
-      const firstNewline = text.indexOf('\n');
-      text = firstNewline >= 0 ? text.slice(firstNewline + 1) : '';
+      const newline = text.indexOf('\n');
+      discardedBytes = newline < 0 ? length : Buffer.byteLength(text.slice(0, newline));
+      startOffset += discardedBytes + (newline < 0 ? 0 : 1);
+      text = newline < 0 ? '' : text.slice(newline + 1);
     }
-    return text;
-  } catch {
-    return '';
-  } finally {
-    if (descriptor !== undefined) fs.closeSync(descriptor);
-  }
+    return { text, size, startOffset, sampledBytes: length, partial: size > length, discardedBytes, readable: true };
+  } catch { return { text: '', size: 0, startOffset: 0, sampledBytes: 0, partial: true, discardedBytes: 0, readable: false }; }
+  finally { if (fd !== undefined) fs.closeSync(fd); }
 }
-
-function latestTokenUsage(transcriptPath) {
-  const lines = readTail(transcriptPath, config.tailBytes).split(/\r?\n/);
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const line = lines[index];
-    if (!line.includes('token_count') || !line.includes('model_context_window')) continue;
-    try {
-      const event = JSON.parse(line);
-      if (event?.type !== 'event_msg' || event?.payload?.type !== 'token_count') continue;
-      const info = event.payload.info || {};
-      const usage = info.last_token_usage || {};
-      const inputTokens = Number(usage.input_tokens || 0);
-      const contextWindow = Number(info.model_context_window || 0);
-      return {
-        measuredAt: Date.parse(event.timestamp) || null,
-        inputTokens,
-        contextWindow,
-        contextRatio: contextWindow > 0 ? inputTokens / contextWindow : 0,
-      };
-    } catch {
-      // The transcript is an intentionally unstable interface. Ignore unknown lines.
+function sample(tail, state, now) {
+  let images = new Map();
+  let imageBytes = 0, imageCount = 0, newImageBytes = 0;
+  let recordOffset = tail.startOffset;
+  const previousOffset = state.lastCheck?.scanOffset || 0;
+  let compactAt = Number(state.lastCompactAt || 0);
+  const failures = [];
+  let usage = { inputTokens: 0, contextWindow: 0, measuredAt: null };
+  for (const rawLine of tail.text.split('\n')) {
+    const line = rawLine.replace(/\r$/, '');
+    const recordStart = recordOffset;
+    recordOffset += Buffer.byteLength(rawLine) + 1;
+    let event;
+    try { event = JSON.parse(line); } catch { continue; }
+    const payload = event.payload || {};
+    const at = Date.parse(event.timestamp) || 0;
+    if (event.type === 'compacted' || (event.type === 'event_msg' && payload.type === 'context_compacted')) {
+      images = new Map(); imageBytes = 0; imageCount = 0; newImageBytes = 0;
+      compactAt = Math.max(compactAt, at);
+      continue;
+    }
+    if (event.type === 'event_msg' && payload.type === 'token_count' && payload.info?.last_token_usage) {
+      usage = { inputTokens: Number(payload.info.last_token_usage.input_tokens || 0),
+        contextWindow: Number(payload.info.model_context_window || 0), measuredAt: at || null };
+    }
+    // Only explicit error events, not arbitrary assistant text or command logs.
+    if (event.type === 'event_msg' && payload.type === 'error' && at >= now - config.failureWindow) {
+      const error = JSON.stringify(payload);
+      if (connectionPattern.test(error) || compactFailurePattern.test(error)) {
+        failures.push({ key: digest(line), at, kind: compactFailurePattern.test(error) ? 'compaction' : 'connection' });
+      }
+    }
+    if (event.type !== 'response_item' || (compactAt && (!at || at <= compactAt))) continue;
+    if (!['message', 'function_call_output', 'custom_tool_call_output', 'image_generation_call'].includes(payload.type)) continue;
+    // Scan only the actual response item, excluding mirrored item_completed events.
+    // Also detects data URLs inside JSON-serialized tool text without recursively
+    // parsing or persisting that text. No image bytes/hashes are written to state.
+    const content = JSON.stringify(payload.type === 'message' ? payload.content : payload.output ?? payload.result ?? '');
+    const urls = content.match(/data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+/gi) || [];
+    if (payload.type === 'image_generation_call' && typeof payload.result === 'string' &&
+      /^[a-z0-9+/=]{1024,}$/i.test(payload.result)) urls.push(payload.result);
+    for (const url of urls) {
+      const bytes = Buffer.byteLength(url);
+      imageBytes += bytes; imageCount++;
+      if (recordStart >= previousOffset) newImageBytes += bytes;
+      const key = digest(url);
+      if (!images.has(key)) images.set(key, bytes);
     }
   }
-  return { inputTokens: 0, contextWindow: 0, contextRatio: 0 };
+  const uniqueBytes = [...images.values()].reduce((sum, value) => sum + value, 0);
+  return { imageBytes, newImageBytes, imageCount, uniqueImages: images.size, duplicateImageBytes: imageBytes - uniqueBytes,
+    compactAt, failures, usage };
 }
-
-function recordCompaction(input, state, now) {
-  if (input.hook_event_name !== 'PostCompact') return;
-  const key = `${input.turn_id || 'unknown'}:${input.trigger || 'unknown'}`;
-  if (!state.compactions.some((item) => item.key === key)) {
-    state.compactions.push({ key, at: now, trigger: input.trigger || 'unknown' });
-  }
-}
-
-function recentCompactions(state, now) {
-  const cutoff = now - config.compactionWindowMs;
-  state.compactions = (state.compactions || []).filter((item) => Number(item.at) >= cutoff);
-  return state.compactions.length;
-}
-
-function classify(bytes, contextRatio, compactions, inputTokens = 0) {
-  if (bytes >= config.criticalBytes || contextRatio >= config.criticalContextRatio || inputTokens >= config.criticalInputTokens) return 'critical';
-  if (
-    inputTokens >= config.recommendInputTokens ||
-    bytes >= config.recommendBytes ||
-    contextRatio >= config.recommendContextRatio ||
-    compactions >= config.recommendCompactions
-  ) return 'recommend';
-  if (bytes >= config.warnBytes || contextRatio >= config.warnContextRatio || inputTokens >= config.warnInputTokens) return 'warning';
+function classify(metrics, failures, compactions) {
+  const duplicateRisk = metrics.duplicateImageBytes >= config.duplicateBytes;
+  const imageRisk = metrics.imageBytes >= config.warnImages || duplicateRisk || metrics.imageGrowthBytes >= config.growthBytes;
+  if (metrics.imageBytes >= config.criticalImages) return 'critical';
+  if (metrics.imageBytes >= config.recommendImages ||
+    (duplicateRisk && metrics.duplicateImageBytes >= metrics.imageBytes / 2) ||
+    (failures > 0 && imageRisk) || failures >= 2 || (failures > 0 && compactions >= config.compactions)) return 'recommend';
+  if (imageRisk || failures > 0) return 'warning';
   return 'healthy';
 }
-
-function formatSize(bytes) {
-  if (bytes >= GIB) return `${(bytes / GIB).toFixed(2)} GiB`;
-  return `${(bytes / MIB).toFixed(1)} MiB`;
+function decline(prompt) {
+  return /不用|不要|暂不|稍后|取消|不迁移|就.{0,8}(当前|这里|这个)|继续.{0,8}(当前|这里)|(^|\s)(no|not now|later|cancel|stay here)(\s|$|[,!.?])/iu.test(prompt);
 }
-
-function isLikelyDecline(prompt) {
-  const text = prompt || '';
-  return /(^|\s)(no|not now|later|cancel)(\s|$|[,!.?])/iu.test(text) ||
-    /(不用|不要|暂不|稍后|取消|不迁移)/u.test(text);
+function confirmation(prompt) {
+  return /确认|同意|迁移|新对话|新任务|开始迁移|(^|\s)(yes|confirm|proceed|migrate)(\s|$|[,!.?])/iu.test(prompt);
 }
-
-function isLikelyConfirmation(prompt) {
-  const text = prompt || '';
-  return /(^|\s)(yes|confirm|confirmed|proceed|migrate|new task|new conversation)(\s|$|[,!.?])/iu.test(text) ||
-    /(确认|同意|迁移|新对话|新任务|开始迁移)/u.test(text);
-}
-
-function shouldNotify(state, level, now) {
-  const previousRank = ranks[state.lastNotifiedLevel || 'healthy'];
-  if (ranks[level] > previousRank) return true;
-  const elapsed = now - Number(state.lastNotifiedAt || 0);
-  const cooldown = level === 'critical' ? 15 * 60 * 1000 : level === 'recommend' ? 2 * 60 * 60 * 1000 : 12 * 60 * 60 * 1000;
-  return elapsed >= cooldown;
-}
-
-function healthSummary(level, bytes, usage, compactions) {
-  const parts = [`transcript ${formatSize(bytes)}`];
-  if (usage.contextWindow > 0) {
-    parts.push(`context ${(usage.contextRatio * 100).toFixed(1)}% (${usage.inputTokens}/${usage.contextWindow} tokens)`);
-  }
-  if (compactions > 0) parts.push(`${compactions} compactions in the monitoring window`);
-  return `${level}: ${parts.join(', ')}`;
-}
-
-function migrationContext(summary, pending) {
-  return [
-    `Conversation Lifeboat reports ${summary}.`,
-    pending
-      ? 'A migration offer is pending. Interpret the current user prompt in conversation context. If it explicitly confirms migration, invoke $conversation-handoff now; otherwise do not migrate.'
-      : 'Before continuing substantial implementation, tell the user that this task is large enough to impair reliability or responsiveness and ask whether to update durable project specifications, carry the current execution state in a language-preserving starter prompt, and continue in a fresh task.',
-    'Use the same language as the current user prompt and preserve user-authored requirement text verbatim.',
-    'Do not create a new task, modify project specifications, or archive this task without explicit user confirmation.',
-  ].join(' ');
-}
-
-function outputWarning(input, state, level, summary, now, reassess = false) {
-  const prompt = String(input.prompt || '');
-  if (state.migrationOfferPending && isLikelyDecline(prompt)) {
-    state.migrationOfferPending = false;
-    if (!reassess) return null;
-  }
-
-  if (state.migrationOfferPending && isLikelyConfirmation(prompt)) {
-    return {
-      continue: true,
-      hookSpecificOutput: {
-        hookEventName: input.hook_event_name,
-        additionalContext: migrationContext(summary, true),
-      },
-    };
-  }
-
-  if (!reassess && !shouldNotify(state, level, now)) return null;
-
-  state.lastNotifiedAt = now;
-  state.lastNotifiedLevel = level;
-  if (ranks[level] >= ranks.recommend) state.migrationOfferPending = true;
-
-  const eventSupportsContext = input.hook_event_name === 'SessionStart' || input.hook_event_name === 'UserPromptSubmit';
-  const result = {
-    continue: true,
-    systemMessage: `Conversation health ${summary}.`,
-  };
-  if (eventSupportsContext && (ranks[level] >= ranks.recommend || reassess)) {
-    result.hookSpecificOutput = {
-      hookEventName: input.hook_event_name,
-      additionalContext: reassess
-        ? `Connection trouble was reported. Reassess conversation health before continuing substantial work, even if a previous check was healthy. Inspect available recent connection errors and context usage; do not assume size caused the failure. Missing or stale usage cannot establish current health. Report findings in the user's language. ${ranks[level] >= ranks.recommend ? migrationContext(summary, false) : 'Offer a fresh-task handoff if instability persists; require explicit user confirmation before migration.'}`
-        : migrationContext(summary, false),
-    };
-  }
-  return result;
-}
-
 function main() {
-  const input = readHookInput();
+  const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
   const now = Date.now();
-  const stateFile = statePathFor(input);
-  const state = loadState(stateFile);
-
-  recordCompaction(input, state, now);
-  const compactions = recentCompactions(state, now);
-  const bytes = transcriptSize(input.transcript_path);
-  const usage = latestTokenUsage(input.transcript_path);
-  const staleUsage = !usage.measuredAt || now - usage.measuredAt >= config.staleUsageMs;
-  // A report in the current prompt forces a fresh review, not an automatic migration.
-  const reassess = input.hook_event_name === 'UserPromptSubmit' &&
-    /重连|重新连接|断线|连接中断|请求超时|一直.{0,8}(没响应|不响应|没回复|不回复)|reconnect(?:ing)?|stream disconnected|websocket.{0,30}(?:closed|timeout)|idle timeout|10053/iu.test(String(input.prompt || ''));
-  let level = classify(bytes, usage.contextRatio, compactions, usage.inputTokens);
-  if ((staleUsage || reassess) && level === 'healthy') level = 'warning';
-
-  state.lastCheck = {
-    at: now,
-    level,
-    transcriptBytes: bytes,
-    inputTokens: usage.inputTokens,
-    contextWindow: usage.contextWindow,
-    contextRatio: usage.contextRatio,
-    recentCompactions: compactions,
-    usageMeasuredAt: usage.measuredAt || null,
-    usageStale: staleUsage,
-    connectionReassessment: reassess,
-  };
-
-  let output = null;
-  if (
-    level !== 'healthy' &&
-    (input.hook_event_name === 'SessionStart' || input.hook_event_name === 'UserPromptSubmit')
-  ) {
-    const summary = healthSummary(level, bytes, usage, compactions) +
-      (staleUsage ? ', token usage missing or stale; current health is unknown' : '') +
-      (reassess ? ', connection trouble reported; reassessment required' : '');
-    output = outputWarning(input, state, level, summary, now, reassess);
+  const root = path.join(process.env.PLUGIN_DATA || path.join(os.tmpdir(), 'conversation-lifeboat'), 'sessions');
+  fs.mkdirSync(root, { recursive: true });
+  const file = path.join(root, `${String(input.session_id || 'unknown').replace(/[^a-z0-9._-]/gi, '_')}.json`);
+  let state;
+  try { state = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { state = {}; }
+  // Discard pending offers/notifications produced by the retired token policy.
+  if (state.policyVersion !== POLICY) state = { policyVersion: POLICY, compactions: state.compactions || [] };
+  state.compactions = (state.compactions || []).filter(item => item.at >= now - config.compactionWindow);
+  if (input.hook_event_name === 'PostCompact') {
+    const key = `${input.turn_id || 'unknown'}:${input.trigger || 'unknown'}`;
+    if (!state.compactions.some(item => item.key === key)) state.compactions.push({ key, at: now });
+    state.lastCompactAt = now;
   }
-
-  saveState(stateFile, state);
+  const tail = readTail(input.transcript_path);
+  const observed = sample(tail, state, now);
+  state.lastCompactAt = observed.compactAt;
+  let failures = [...(state.failures || []), ...observed.failures];
+  failures = [...new Map(failures.map(f => [f.key, f])).values()]
+    .filter(f => f.at >= now - config.failureWindow && (!observed.usage.measuredAt || f.at > observed.usage.measuredAt));
+  const prompt = input.hook_event_name === 'UserPromptSubmit' ? String(input.prompt || '') : '';
+  const reassess = connectionPattern.test(prompt) || compactFailurePattern.test(prompt);
+  if (reassess) {
+    failures.push({ key: `report:${input.turn_id || now}`, at: now,
+      kind: compactFailurePattern.test(prompt) ? 'compaction' : 'connection' });
+    // A repeated-failure report is evidence of persistence, not two invented log events.
+    if (/一直.{0,20}(重连|超时|没响应)|反复|连续|reconnect(?:ing)?\s+[2-5]\/5|repeated|keeps? reconnecting/iu.test(prompt)) {
+      failures.push({ key: `persistent-report:${input.turn_id || now}`, at: now, kind: 'reported-persistence' });
+    }
+  }
+  state.failures = [...new Map(failures.map(f => [f.key, f])).values()].slice(-32);
+  const previous = state.lastCheck;
+  const sameSegment = previous && previous.compactAt === observed.compactAt;
+  const transcriptIdentity = digest(String(input.transcript_path || ''));
+  const appendOnly = previous && tail.readable && tail.size >= previous.transcriptBytes && transcriptIdentity === previous.transcriptIdentity;
+  const retainedImageBytes = sameSegment && appendOnly
+    ? Math.max(observed.imageBytes, (previous.retainedImageBytes || previous.imageBytes || 0) + observed.newImageBytes)
+    : observed.imageBytes;
+  const imageGrowthBytes = sameSegment && appendOnly && now - previous.at <= config.growthWindow
+    ? observed.newImageBytes : 0;
+  const metrics = { ...observed, imageBytes: retainedImageBytes, imageGrowthBytes };
+  let level = classify(metrics, state.failures.length, state.compactions.length);
+  // A partial oversized record cannot be inspected; request a non-migration review.
+  if ((reassess || tail.discardedBytes >= config.warnImages) && level === 'healthy') level = 'warning';
+  state.lastCheck = { at: now, level, transcriptIdentity, scanOffset: tail.size,
+    transcriptBytes: tail.size, sampledBytes: tail.sampledBytes, retainedImageBytes,
+    partialSample: tail.partial, transcriptReadable: tail.readable, discardedPartialRecordBytes: tail.discardedBytes,
+    imageBytes: observed.imageBytes, imageCount: observed.imageCount, uniqueImages: observed.uniqueImages,
+    duplicateImageBytes: observed.duplicateImageBytes, imageGrowthBytes, compactAt: observed.compactAt,
+    recentFailures: state.failures.length, recentCompactions: state.compactions.length,
+    inputTokens: observed.usage.inputTokens, contextWindow: observed.usage.contextWindow,
+    usageMeasuredAt: observed.usage.measuredAt, connectionReassessment: reassess };
+  if (level === 'healthy') {
+    state.migrationOfferPending = false;
+    state.declinedLevel = null;
+  }
+  let output;
+  const supportsContext = ['SessionStart', 'UserPromptSubmit'].includes(input.hook_event_name);
+  if (supportsContext) {
+    if (decline(prompt)) {
+      state.migrationOfferPending = false;
+      state.declinedLevel = level;
+    }
+    const suppressed = state.declinedLevel && ranks[level] <= ranks[state.declinedLevel];
+    if (state.migrationOfferPending && !decline(prompt) && confirmation(prompt)) {
+      output = { continue: true, hookSpecificOutput: { hookEventName: input.hook_event_name,
+        additionalContext: 'A migration offer is pending. Interpret the current prompt in context; invoke $conversation-handoff only if the user explicitly confirms migration. Otherwise continue the requested work.' } };
+    } else if (level !== 'healthy' && (reassess || (!suppressed &&
+      (ranks[level] > ranks[state.lastNotifiedLevel || 'healthy'] || now - (state.lastNotifiedAt || 0) >= 12 * 3600000)))) {
+      state.lastNotifiedAt = now; state.lastNotifiedLevel = level;
+      const canOffer = ranks[level] >= ranks.recommend && !suppressed;
+      if (canOffer) state.migrationOfferPending = true;
+      const summary = `${level}: observed retained inline image data at least ${(retainedImageBytes / MIB).toFixed(1)} MiB, sampled duplicate data ${(observed.duplicateImageBytes / MIB).toFixed(1)} MiB, recent failure signals ${state.failures.length}`;
+      output = { continue: true, systemMessage: `Conversation Lifeboat ${summary}. This is a bounded history sample, not measured outgoing request size.` };
+      output.hookSpecificOutput = { hookEventName: input.hook_event_name, additionalContext: [
+        `Conversation Lifeboat evidence: ${summary}.`,
+        reassess ? 'Connection or compaction trouble was reported. Reassess recent failures before continuing; do not assume size is the cause.' : 'Assess the image/history evidence before recommending action.',
+        tail.readable ? 'The bounded sample may omit older active images.' : 'The transcript is unavailable; current image payload is unknown.',
+        'Token count, context-window percentage, transcript total size, missing token usage, and normal automatic compaction alone are never reasons to offer handoff.',
+        canOffer ? 'You may briefly offer $conversation-handoff if the evidence supports persistent instability or abnormal image retention. Keep working on the current request; do not stop solely to ask about migration.' : 'Continue the current request without offering migration on these signals alone.',
+        suppressed ? 'The user chose to stay. Do not repeat a migration offer at this or a lower severity.' : '',
+        'Never create a task, edit specifications, or archive this task without explicit migration authorization. Use the user\'s language. Never claim history image bytes equal actual request bytes.',
+      ].filter(Boolean).join(' ') };
+    }
+  }
+  const temporary = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, JSON.stringify(state, null, 2) + '\n');
+  fs.renameSync(temporary, file);
   if (output) process.stdout.write(JSON.stringify(output));
 }
-
-try {
-  main();
-} catch (error) {
-  process.stderr.write(`Conversation Lifeboat hook failed safely: ${error.message}\n`);
+try { main(); } catch {
+  process.stderr.write('Conversation Lifeboat hook failed safely.\n');
   process.exitCode = 0;
 }
