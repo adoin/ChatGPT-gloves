@@ -9,6 +9,57 @@ const test = require('node:test');
 
 const script = path.resolve(__dirname, '../plugins/conversation-lifeboat/scripts/conversation-health.cjs');
 
+function tokenLine(inputTokens, timestamp = new Date().toISOString()) {
+  return JSON.stringify({ timestamp, type: 'event_msg', payload: { type: 'token_count',
+    info: { last_token_usage: { input_tokens: inputTokens }, model_context_window: 828400 } } });
+}
+
+test('absolute token limits protect large windows independently of percentage', (t) => {
+  for (const [tokens, level] of [[199999, null], [200000, 'warning'], [300000, 'recommend'], [452341, 'critical']]) {
+    const item = fixture([tokenLine(tokens)]);
+    t.after(() => fs.rmSync(item.root, { recursive: true, force: true }));
+    const output = run({ session_id: 'absolute', transcript_path: item.transcript,
+      hook_event_name: 'UserPromptSubmit', prompt: 'continue' }, item.data);
+    if (!level) assert.equal(output, null);
+    else assert.match(output.systemMessage, new RegExp(`${level}:`));
+  }
+});
+
+test('stale or missing usage does not establish healthy status', (t) => {
+  for (const lines of [[], [tokenLine(1000, '2026-01-01T00:00:00Z')]]) {
+    const item = fixture(lines);
+    t.after(() => fs.rmSync(item.root, { recursive: true, force: true }));
+    const output = run({ session_id: 'stale', transcript_path: item.transcript,
+      hook_event_name: 'UserPromptSubmit', prompt: 'continue' }, item.data);
+    assert.match(output.systemMessage, /current health is unknown/);
+    assert.equal(output.hookSpecificOutput, undefined);
+  }
+});
+
+test('connection reports bypass cooldown and force review without automatic migration', (t) => {
+  const item = fixture([tokenLine(250000)]);
+  t.after(() => fs.rmSync(item.root, { recursive: true, force: true }));
+  const input = { session_id: 'reconnect', transcript_path: item.transcript,
+    hook_event_name: 'UserPromptSubmit', prompt: 'continue' };
+  assert.ok(run(input, item.data));
+  assert.equal(run(input, item.data), null);
+  for (const prompt of ['一直重连怎么办', 'idle timeout sending websocket request', 'Reconnecting 2/5']) {
+    const output = run({ ...input, prompt }, item.data);
+    assert.match(output.hookSpecificOutput.additionalContext, /Reassess conversation health/);
+    assert.match(output.hookSpecificOutput.additionalContext, /explicit user confirmation/);
+  }
+  assert.equal(run(input, item.data), null);
+});
+
+test('unreadable transcript fails open and reports uncertainty', (t) => {
+  const item = fixture();
+  t.after(() => fs.rmSync(item.root, { recursive: true, force: true }));
+  const output = run({ session_id: 'missing', transcript_path: path.join(item.root, 'missing'),
+    hook_event_name: 'UserPromptSubmit', prompt: '重连' }, item.data);
+  assert.equal(output.continue, true);
+  assert.match(output.systemMessage, /unknown/);
+});
+
 function fixture(lines = []) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'conversation-lifeboat-test-'));
   const transcript = path.join(root, 'rollout.jsonl');

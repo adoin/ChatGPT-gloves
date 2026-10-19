@@ -13,6 +13,10 @@ function numberFromEnv(name, fallback) {
 }
 
 const config = {
+  warnInputTokens: numberFromEnv('CONVERSATION_LIFEBOAT_WARN_INPUT_TOKENS', 200000),
+  recommendInputTokens: numberFromEnv('CONVERSATION_LIFEBOAT_RECOMMEND_INPUT_TOKENS', 300000),
+  criticalInputTokens: numberFromEnv('CONVERSATION_LIFEBOAT_CRITICAL_INPUT_TOKENS', 400000),
+  staleUsageMs: numberFromEnv('CONVERSATION_LIFEBOAT_STALE_USAGE_HOURS', 24) * 60 * 60 * 1000,
   warnBytes: numberFromEnv('CONVERSATION_LIFEBOAT_WARN_MIB', 512) * MIB,
   recommendBytes: numberFromEnv('CONVERSATION_LIFEBOAT_RECOMMEND_MIB', 2048) * MIB,
   criticalBytes: numberFromEnv('CONVERSATION_LIFEBOAT_CRITICAL_MIB', 5120) * MIB,
@@ -100,6 +104,7 @@ function latestTokenUsage(transcriptPath) {
       const inputTokens = Number(usage.input_tokens || 0);
       const contextWindow = Number(info.model_context_window || 0);
       return {
+        measuredAt: Date.parse(event.timestamp) || null,
         inputTokens,
         contextWindow,
         contextRatio: contextWindow > 0 ? inputTokens / contextWindow : 0,
@@ -125,14 +130,15 @@ function recentCompactions(state, now) {
   return state.compactions.length;
 }
 
-function classify(bytes, contextRatio, compactions) {
-  if (bytes >= config.criticalBytes || contextRatio >= config.criticalContextRatio) return 'critical';
+function classify(bytes, contextRatio, compactions, inputTokens = 0) {
+  if (bytes >= config.criticalBytes || contextRatio >= config.criticalContextRatio || inputTokens >= config.criticalInputTokens) return 'critical';
   if (
+    inputTokens >= config.recommendInputTokens ||
     bytes >= config.recommendBytes ||
     contextRatio >= config.recommendContextRatio ||
     compactions >= config.recommendCompactions
   ) return 'recommend';
-  if (bytes >= config.warnBytes || contextRatio >= config.warnContextRatio) return 'warning';
+  if (bytes >= config.warnBytes || contextRatio >= config.warnContextRatio || inputTokens >= config.warnInputTokens) return 'warning';
   return 'healthy';
 }
 
@@ -181,11 +187,11 @@ function migrationContext(summary, pending) {
   ].join(' ');
 }
 
-function outputWarning(input, state, level, summary, now) {
+function outputWarning(input, state, level, summary, now, reassess = false) {
   const prompt = String(input.prompt || '');
   if (state.migrationOfferPending && isLikelyDecline(prompt)) {
     state.migrationOfferPending = false;
-    return null;
+    if (!reassess) return null;
   }
 
   if (state.migrationOfferPending && isLikelyConfirmation(prompt)) {
@@ -198,7 +204,7 @@ function outputWarning(input, state, level, summary, now) {
     };
   }
 
-  if (!shouldNotify(state, level, now)) return null;
+  if (!reassess && !shouldNotify(state, level, now)) return null;
 
   state.lastNotifiedAt = now;
   state.lastNotifiedLevel = level;
@@ -209,10 +215,12 @@ function outputWarning(input, state, level, summary, now) {
     continue: true,
     systemMessage: `Conversation health ${summary}.`,
   };
-  if (eventSupportsContext && ranks[level] >= ranks.recommend) {
+  if (eventSupportsContext && (ranks[level] >= ranks.recommend || reassess)) {
     result.hookSpecificOutput = {
       hookEventName: input.hook_event_name,
-      additionalContext: migrationContext(summary, false),
+      additionalContext: reassess
+        ? `Connection trouble was reported. Reassess conversation health before continuing substantial work, even if a previous check was healthy. Inspect available recent connection errors and context usage; do not assume size caused the failure. Missing or stale usage cannot establish current health. Report findings in the user's language. ${ranks[level] >= ranks.recommend ? migrationContext(summary, false) : 'Offer a fresh-task handoff if instability persists; require explicit user confirmation before migration.'}`
+        : migrationContext(summary, false),
     };
   }
   return result;
@@ -228,7 +236,12 @@ function main() {
   const compactions = recentCompactions(state, now);
   const bytes = transcriptSize(input.transcript_path);
   const usage = latestTokenUsage(input.transcript_path);
-  const level = classify(bytes, usage.contextRatio, compactions);
+  const staleUsage = !usage.measuredAt || now - usage.measuredAt >= config.staleUsageMs;
+  // A report in the current prompt forces a fresh review, not an automatic migration.
+  const reassess = input.hook_event_name === 'UserPromptSubmit' &&
+    /重连|重新连接|断线|连接中断|请求超时|一直.{0,8}(没响应|不响应|没回复|不回复)|reconnect(?:ing)?|stream disconnected|websocket.{0,30}(?:closed|timeout)|idle timeout|10053/iu.test(String(input.prompt || ''));
+  let level = classify(bytes, usage.contextRatio, compactions, usage.inputTokens);
+  if ((staleUsage || reassess) && level === 'healthy') level = 'warning';
 
   state.lastCheck = {
     at: now,
@@ -238,6 +251,9 @@ function main() {
     contextWindow: usage.contextWindow,
     contextRatio: usage.contextRatio,
     recentCompactions: compactions,
+    usageMeasuredAt: usage.measuredAt || null,
+    usageStale: staleUsage,
+    connectionReassessment: reassess,
   };
 
   let output = null;
@@ -245,7 +261,10 @@ function main() {
     level !== 'healthy' &&
     (input.hook_event_name === 'SessionStart' || input.hook_event_name === 'UserPromptSubmit')
   ) {
-    output = outputWarning(input, state, level, healthSummary(level, bytes, usage, compactions), now);
+    const summary = healthSummary(level, bytes, usage, compactions) +
+      (staleUsage ? ', token usage missing or stale; current health is unknown' : '') +
+      (reassess ? ', connection trouble reported; reassessment required' : '');
+    output = outputWarning(input, state, level, summary, now, reassess);
   }
 
   saveState(stateFile, state);

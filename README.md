@@ -10,7 +10,11 @@ Local SSH Deploy opens a native form and securely persists named deployment prof
 
 ## Conversation Lifeboat
 
-Conversation Lifeboat watches transcript size, effective context pressure, and repeated compaction. At serious thresholds it asks the user whether to update durable project specifications and continue transient execution state in a fresh-task prompt.
+Conversation Lifeboat watches transcript size, absolute input tokens, effective context pressure, and repeated compaction. At serious thresholds it asks the user whether to update durable project specifications and continue transient execution state in a fresh-task prompt.
+
+Absolute input-token thresholds default to 200,000 (warning), 300,000 (recommend migration), and 400,000 (critical), independently of the model's context-window percentage. Missing usage or usage older than 24 hours produces an uncertainty warning; old high usage still preserves its severity. These are operational thresholds, not model limits or proof that request size caused a failure.
+
+When the current user prompt reports reconnection, a disconnected stream, or a WebSocket timeout (Chinese or English), the next `UserPromptSubmit` check bypasses notification cooldown and requires a fresh assessment of connection errors and context usage. It does not automatically migrate or establish that context size caused the failure. Codex does not expose a reconnect hook here: this check runs when the report is submitted, not during an already-stalled network request. It reads no application log database and does not scan historical prompts for connection keywords. Migration still requires explicit confirmation.
 
 The plugin contains:
 
@@ -70,6 +74,10 @@ Defaults can be overridden through environment variables before Codex starts:
 | Variable | Default | Meaning |
 |---|---:|---|
 | `CONVERSATION_LIFEBOAT_WARN_MIB` | `512` | Show a low-frequency size warning |
+| `CONVERSATION_LIFEBOAT_WARN_INPUT_TOKENS` | `200000` | Absolute input-token warning threshold |
+| `CONVERSATION_LIFEBOAT_RECOMMEND_INPUT_TOKENS` | `300000` | Recommend migration at this absolute input size |
+| `CONVERSATION_LIFEBOAT_CRITICAL_INPUT_TOKENS` | `400000` | Critical absolute input size |
+| `CONVERSATION_LIFEBOAT_STALE_USAGE_HOURS` | `24` | Mark missing or older token usage as uncertain |
 | `CONVERSATION_LIFEBOAT_RECOMMEND_MIB` | `2048` | Recommend a fresh-task handoff |
 | `CONVERSATION_LIFEBOAT_CRITICAL_MIB` | `5120` | Treat the transcript as critical |
 | `CONVERSATION_LIFEBOAT_WARN_CONTEXT_RATIO` | `0.8` | Non-blocking context warning ratio |
