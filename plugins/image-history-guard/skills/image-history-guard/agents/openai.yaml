@@ -1,4 +1,4 @@
 interface:
   display_name: "Image History Guard"
-  short_description: "Deduplicate repeated images in Codex requests"
+  short_description: "Keep image references stable across Codex turns"
   default_prompt: "Use $image-history-guard to inspect or enable the local image deduplication proxy."

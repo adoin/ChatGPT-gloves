@@ -10,6 +10,7 @@ const { parse } = require('smol-toml');
 
 const BEGIN = '# BEGIN image-history-guard (managed)';
 const END = '# END image-history-guard (managed)';
+const VERSION = '0.2.0';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function settings(home) {
@@ -54,11 +55,12 @@ async function stop(state) {
 async function serve(file) {
   const state = readState(file);
   const { createProxy } = require('../lib/proxy.cjs');
-  const server = createProxy({ upstream: state.upstream, capability: state.capability });
+  const server = createProxy({ upstream: state.upstream, capability: state.capability,
+    imageRoot: path.join(path.dirname(file), 'images') });
   const port = state.port || 0;
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
   const actualPort = server.address().port;
-  save(file, { ...state, pid: process.pid, port: actualPort,
+  save(file, { ...state, version: VERSION, pid: process.pid, port: actualPort,
     baseUrl: `http://127.0.0.1:${actualPort}${server.guardPrefix}` });
   const close = () => server.guardClose();
   process.on('SIGINT', close);
@@ -82,7 +84,8 @@ async function launch(file, runtime) {
 function prepareRuntime(data) {
   const root = path.resolve(__dirname, '..');
   const digest = crypto.createHash('sha256');
-  const files = ['package.json', 'package-lock.json', 'lib/filter.cjs', 'lib/proxy.cjs', 'scripts/guard.cjs'];
+  const files = ['package.json', 'package-lock.json', 'lib/filter.cjs', 'lib/proxy.cjs', 'lib/identity.cjs',
+    'lib/image-store.cjs', 'lib/engine.cjs', 'lib/filter-worker.cjs', 'scripts/guard.cjs'];
   for (const file of files) digest.update(fs.readFileSync(path.join(root, file)));
   const runtime = path.join(data, 'runtime', digest.digest('hex').slice(0, 16));
   for (const file of files) {
@@ -118,6 +121,34 @@ async function control(command, home) {
     return { installed: true, enabled: config.openai_base_url === state.baseUrl, running: Boolean(info), ...info };
   }
   return withLock(paths, async () => {
+    if (command === 'upgrade') {
+      const prior = readState(paths.state);
+      const original = fs.readFileSync(paths.config, 'utf8');
+      const withoutRoute = detachConfig(original, prior.baseUrl);
+      const runtime = prepareRuntime(paths.data);
+      const running = await health(prior);
+      if (prior.runtime === runtime && running?.version === VERSION) return { upgraded: false, running: true, version: VERSION };
+      const staged = path.join(paths.data, `installation-${crypto.randomBytes(8).toString('hex')}.json`);
+      let next;
+      try {
+        save(staged, { upstream: prior.upstream, runtime, capability: crypto.randomBytes(24).toString('hex') });
+        next = await launch(staged, runtime);
+        if (fs.readFileSync(paths.config, 'utf8') !== original) throw new Error('Configuration changed concurrently.');
+        fs.writeFileSync(path.join(paths.data, `config-before-upgrade-${Date.now()}.toml`), original, { mode: 0o600, flag: 'wx' });
+        atomic(paths.config, attachConfig(withoutRoute, next.baseUrl));
+        save(paths.state, { ...next, retired: [...(prior.retired || []), { baseUrl: prior.baseUrl, runtime: prior.runtime, pid: prior.pid }] });
+        try { fs.unlinkSync(staged); } catch { /* promotion is already committed */ }
+        // Old app processes may still use the previous route; keep that listener
+        // alive. New app processes use the new runtime after restart.
+        return { upgraded: true, enabled: true, running: true, version: VERSION, restartCodex: true, previousListenerRetained: true };
+      } catch (error) {
+        if (next) await stop(next);
+        // Restore only our own route if a promotion failed; preserve user edits.
+        if (next && fs.readFileSync(paths.config, 'utf8') === attachConfig(withoutRoute, next.baseUrl)) atomic(paths.config, original);
+        try { fs.unlinkSync(staged); } catch { /* no staged runtime */ }
+        throw error;
+      }
+    }
     if (command === 'disable') {
       const state = readState(paths.state);
       const original = fs.readFileSync(paths.config, 'utf8');
@@ -133,6 +164,7 @@ async function control(command, home) {
       const config = parse(fs.readFileSync(paths.config, 'utf8'));
       if (config.openai_base_url === state.baseUrl) throw new Error('Disable routing and restart Codex before stopping the proxy.');
       await stop(state);
+      for (const retired of state.retired || []) await stop(retired);
       return { stopped: true };
     }
     if (command === 'start') {
@@ -140,7 +172,7 @@ async function control(command, home) {
       const running = await health(state) || await health(await launch(paths.state, state.runtime));
       return { running: Boolean(running), ...running };
     }
-    if (command !== 'enable') throw new Error('Expected enable, disable, start, stop, or status.');
+    if (command !== 'enable') throw new Error('Expected enable, upgrade, disable, start, stop, or status.');
     if (fs.existsSync(paths.state)) {
       const state = readState(paths.state);
       const config = parse(fs.readFileSync(paths.config, 'utf8'));

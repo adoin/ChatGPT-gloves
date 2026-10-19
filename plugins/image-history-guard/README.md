@@ -1,10 +1,26 @@
 # Image History Guard
 
-An opt-in loopback proxy for the default, ChatGPT-authenticated Codex OpenAI provider. Addresses a narrow part of [openai/codex#28316](https://github.com/openai/codex/issues/28316): duplicate inline images in the supplied request input. It retains the last occurrence of each byte-identical image and replaces earlier occurrences with stable references. Different PNG/JPEG encodings are different images; it does not decode pixels or recompress images.
+Experimental local proxy for the default ChatGPT-authenticated Codex provider, addressing repeated structured inline-image replay. Version 0.2.0 replaces the old “keep last occurrence” policy with stable first-image references.
 
-## Use
+## What changes
 
-Install this plugin from the ChatGPT Gloves GitHub marketplace. In its plugin root:
+- Every first image keeps its position and receives a deterministic SHA-256 ID and local recovery path. Appending a duplicate does not move or rewrite earlier originals.
+- Later identical images in incremental requests are referenced only when an observed successful previous_response_id proves the original was supplied in that thread's response chain. A cached local file by itself is not proof. Failed requests never seed lineage.
+- Full requests always retain the first original and deterministically reference later duplicates. Consequently a full replay still uploads one original per distinct image. This does not eliminate all of openai/codex#28316.
+- Identity comes from client_metadata.thread_id, checked against x-client-request-id and explicit turn metadata. Account scope is derived from account/auth identity, without storing credentials. Forks are isolated even if session-id and prompt_cache_key are shared. Missing/conflicting identity passes through; WebSocket messages require their own thread_id.
+- Model responses and original rollouts are unchanged. Summarization input passes through. Confirmed compaction invalidates inherited image assumptions. An unknown ancestor after reconnect/proxy restart retains originals rather than risking dangling references.
+
+## Recovery and local storage
+
+An annotation tells the model to use its existing view_image tool on the exact local image path if the original pixels are no longer available. Such explicit reloads are not stripped out again. No tool schemas are injected. A textual ID is not a server-side image handle, and this does not force a model to call a recovery tool or guarantee server-side cache retention.
+
+Decoded images are ordinary local files under CODEX_HOME/plugins/data/image-history-guard-chatgpt-gloves/images, partitioned by hashed account/thread scope. Limits: 32 MiB per image, 256 MiB and 512 images overall, approximate seven-day retention and eviction. No raw prompts, auth tokens, or transcripts are saved. Local copies are not encrypted and do not isolate tools that already share the user's filesystem privileges. If an image is evicted and no longer exists in the request/context, reattachment may be necessary. Unrecognized formats, remote/file IDs, opaque serialized JSON images, native image-generation result items and encrypted fields are untouched.
+
+Hashing, JSON transformation and image storage run in one worker thread with an 8 MiB bounded hash cache. Request processing is bounded at 128 MiB; worker queues are bounded and overload/worker failure passes requests through. Complete-response observation is bounded too; unobservable completion falls back to unknown lineage. These bounds limit resources but do not make large requests free of memory/copying overhead.
+
+## Install, upgrade and roll back
+
+Install from the ChatGPT Gloves GitHub marketplace, then in the plugin root:
 
 ```text
 npm ci --ignore-scripts --no-audit --no-fund
@@ -12,30 +28,33 @@ node scripts/guard.cjs enable
 node scripts/guard.cjs status
 ```
 
-Restart Codex after enable. The controller copies its locked runtime to the user's plugin data directory so cache updates do not remove the running proxy. It changes only a marked `openai_base_url` entry at the top of user config, preserves a backup, and refuses an existing provider override. It does not read or retain authentication files; the client's existing headers are forwarded only to the configured official upstream.
+For an existing installation after updating the marketplace plugin:
 
-Node 22+ and npm are required. `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` are respected by upstream connections. System proxy settings are not auto-detected; configure the process environment if required. Review the bundled SessionStart hook through Codex's normal hook-trust flow: it only starts an installation whose managed route was already explicitly enabled. Without a trusted startup hook, run `node scripts/guard.cjs start` after a reboot, before using Codex. No OS autostart service is installed. If the proxy is stopped while routing points at it, Codex cannot connect; this is not a transparent fail-open network layer.
+```text
+npm ci --ignore-scripts --no-audit --no-fund
+node scripts/guard.cjs upgrade
+```
 
-To roll back:
+Restart Codex after enable/upgrade. Upgrade starts a fresh runtime on a new port and keeps the previous listener alive for running clients. This avoids interrupting other active chats. The config change is reversible and preserves unrelated edits. Existing custom provider routes are refused.
+
+Review the bundled startup hook using Codex's normal trust flow. It only restarts an explicitly enabled installation. No OS service or certificate is installed. Without the trusted hook, run `node scripts/guard.cjs start` after reboot. HTTP_PROXY/HTTPS_PROXY/NO_PROXY are respected; system proxy configuration is not auto-detected. The proxy must be running while its route is configured.
+
+Rollback:
 
 ```text
 node scripts/guard.cjs disable
 ```
 
-Restart Codex, then optionally run `node scripts/guard.cjs stop`. Disable preserves other config edits and leaves the proxy alive for already-running clients. If the managed entry was edited, restore only that entry manually from the backup; do not overwrite unrelated newer config changes.
+Restart Codex. When no old clients need either listener, optionally run `node scripts/guard.cjs stop`. Local cached image files are retained under the data directory; disabling does not erase them.
 
-## Boundaries
+## Measurement
 
-- HTTP/SSE and WebSocket Responses requests are supported, as is HTTP `/responses/compact`. Model-catalog requests pass through. SSE and model output bytes are not transformed. Authentication errors, status codes and close codes are relayed without application-level retries.
-- Only structured `input_image` data URLs inside user message `content` or function/custom-tool `output` arrays are eligible. Text, remote URLs, file IDs, serialized JSON strings, generated-image result items, encrypted content and tool definitions are unchanged.
-- Incremental requests deduplicate only among the newly supplied items; `previous_response_id` stays unchanged. Removing old images from server-retained state would require replaying full context, which this version deliberately does not attempt. Distinct old images are not dropped. A single image replayed once in each successive request will still be sent each time. There is no cross-request image memory.
-- No history or response rewriting, TLS interception, certificate installation, cross-request image cache, payload logging, or automatic hook trust. Status contains only aggregate byte/count metrics; image fingerprints exist only in the request being processed.
-- HTTP compressed request bodies support gzip, deflate, Brotli and, on supporting Node versions, Zstandard. Unknown encodings pass through. Changed compressed requests are forwarded with correct uncompressed length; unchanged requests keep their original bytes. Requests and expanded bodies are bounded at 128 MiB. Larger requests receive 413 instead of exhausting memory. Active large requests still require memory; this is not a streaming JSON parser.
+Status reports removed/restored image counts, payload bytes saved, unknown lineage/identity bypasses and observed input/cached/output tokens. Bytes saved are not equivalent to tokens or subscription quota saved. Stable prefixes are tested locally; actual cache hits depend on the backend. Treat live smoke results and local protocol tests separately and do not infer a general cache/cost guarantee from a successful response.
 
-The supported configurable routing key is documented in [Codex configuration](https://learn.chatgpt.com/docs/config-file/config-reference). This workaround is experimental; passing tests establishes proxy/filter behavior, not compatibility with every Codex Desktop release or a fix for all image-history problems.
+## Validation on 2026-10-19
 
-## Validation recorded on 2026-10-19
+The repository suite passed 36 tests, including verified identity/fork/account isolation, stable first-occurrence replay, successful-response lineage, failure/compaction recovery, bounded storage, incremental view_image restoration, compressed HTTP/SSE, WebSocket transport and non-disruptive runtime upgrade. The updated skill passed validation.
 
-The repository suite passed 21 tests, including filter immutability, HTTP/SSE forwarding, compressed requests, WebSocket metadata/close behavior, config rollback, runtime restart, and startup-hook behavior. Dependency audit reported no vulnerabilities.
+A live Windows Desktop backend test used three baseline turns and three filtered turns with the same 564,642-byte red PNG, followed by an explicit view_image reload and proxy restart/full-history replay. All eight turns returned the correct color. The repeat-image incremental frame shrank from 755,308 to 2,904 bytes; the explicit reload retained the image pixels. Filtered follow-up cached/input ratios were 97.10% and 97.95%; the restart/replay turn reported 99.13%. The separate baseline's third turn reported 96.97%.
 
-A live ephemeral test using the running Windows Desktop CLI, existing ChatGPT authentication, and two identical local PNG attachments completed with the expected model reply. Its incremental `response.create` frame shrank from 3,429,769 to 1,730,252 bytes, removing one of two inline images. A preceding filtered attempt exited without a final response; its reason was not captured, so this remains an experimental workaround rather than a reliability guarantee. No original conversation transcript was edited. This verifies transport acceptance, not detailed visual understanding or removal of images already retained upstream.
+These were separate ephemeral threads with different startup context sizes, so they establish compatibility and observed cache reuse, not a controlled cost/latency comparison or a subscription-quota savings guarantee. Enabling a new transformation in an existing chat can also cause an initial prefix change. Large distinct image histories, native image-generation result payloads and server-side retention remain outside this workaround's guarantees.

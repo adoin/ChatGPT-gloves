@@ -7,7 +7,12 @@ const { promisify } = require('node:util');
 const { WebSocket, WebSocketServer } = require('ws');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { getProxyForUrl } = require('proxy-from-env');
-const { transformBuffer } = require('./filter.cjs');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { randomBytes } = require('node:crypto');
+const { FilterEngine, EventObserver } = require('./engine.cjs');
+const { identityHeaders } = require('./identity.cjs');
 
 const MAX_BYTES = 128 * 1024 * 1024;
 const HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
@@ -43,21 +48,33 @@ async function decodeBody(body, encoding, limit) {
 }
 
 function createProxy({ upstream = 'https://chatgpt.com/backend-api/codex', capability,
-  maxBytes = MAX_BYTES, onMetric = () => {}, allowLocalUpstream = false } = {}) {
+  maxBytes = MAX_BYTES, onMetric = () => {}, allowLocalUpstream = false, imageRoot, storeOptions } = {}) {
   const origin = new URL(upstream);
   if (!capability || !/^[a-f0-9]{32,}$/.test(capability)) throw new Error('A random capability is required');
   if (origin.username || origin.password || origin.search || origin.hash ||
     (origin.protocol !== 'https:' && !(allowLocalUpstream && origin.protocol === 'http:' &&
       ['127.0.0.1', 'localhost', '[::1]'].includes(origin.hostname)))) throw new Error('Invalid upstream');
   const prefix = `/${capability}${origin.pathname.replace(/\/$/, '')}`;
+  const storageRoot = imageRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'image-guard-blobs-'));
+  const engine = new FilterEngine(storageRoot, storeOptions);
   const sockets = new Set();
   let draining = false;
-  const totals = { requests: 0, removedImages: 0, savedBytes: 0, failures: 0 };
+  const totals = { requests: 0, removedImages: 0, restoredImages: 0, savedBytes: 0, failures: 0, skippedIdentity: 0, unknownLineageRequests: 0, hashCacheHits: 0,
+    inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
   function metric(transport, before, after, stats) {
     totals.requests++;
+    if (stats?.scopeSkipped) totals.skippedIdentity++;
+    if (stats?.unknownLineage) totals.unknownLineageRequests++;
+    totals.hashCacheHits += stats?.hashCacheHits || 0;
     totals.removedImages += stats?.removedImages || 0;
+    totals.restoredImages += stats?.restoredImages || 0;
     totals.savedBytes += before - after;
     try { onMetric({ transport, beforeBytes: before, afterBytes: after, ...stats }); } catch { /* diagnostics never block */ }
+  }
+  function usageMetric(transport, result) {
+    if (!result?.usage) return;
+    for (const key of ['inputTokens', 'cachedInputTokens', 'outputTokens']) totals[key] += result.usage[key];
+    try { onMetric({ transport, usage: result.usage }); } catch { /* diagnostics never block */ }
   }
   function target(req) {
     // Browser origins are never clients; no CORS, forwarding proxy, or redirects.
@@ -79,7 +96,7 @@ function createProxy({ upstream = 'https://chatgpt.com/backend-api/codex', capab
     if (url === 'status') {
       if (req.method !== 'GET') { res.writeHead(405).end(); return; }
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-      res.end(JSON.stringify({ service: 'image-history-guard', version: '0.1.0', pid: process.pid, ...totals }));
+      res.end(JSON.stringify({ service: 'image-history-guard', version: '0.2.0', pid: process.pid, ...totals, ...(await engine.stats()), workerFiltering: !engine.failed }));
       return;
     }
     if (url === 'shutdown') {
@@ -89,6 +106,8 @@ function createProxy({ upstream = 'https://chatgpt.com/backend-api/codex', capab
       return;
     }
     if (!['GET', 'POST'].includes(req.method)) { res.writeHead(405).end(); return; }
+    let ticket;
+    const connection = randomBytes(12).toString('hex');
     try {
       let body = await readBody(req, maxBytes);
       const headers = headersFor(req.headers);
@@ -97,7 +116,9 @@ function createProxy({ upstream = 'https://chatgpt.com/backend-api/codex', capab
       if (filterable) {
         const decoded = await decodeBody(body, String(headers['content-encoding'] || '').toLowerCase(), maxBytes);
         if (decoded) {
-          const result = transformBuffer(decoded);
+          const result = await engine.prepare(decoded, { headers: identityHeaders(req.headers, origin.origin), upstream: origin.origin,
+            compact: /\/responses\/compact$/.test(url.pathname), connection });
+          ticket = result.ticket;
           // Do not reserialize or recompress untouched requests.
           metric('http', decoded.length, result.buffer.length, result.stats);
           if (result.buffer !== decoded) {
@@ -113,6 +134,23 @@ function createProxy({ upstream = 'https://chatgpt.com/backend-api/codex', capab
       const upstreamReq = (url.protocol === 'https:' ? https : http).request(url, {
         method: req.method, headers, agent: proxyAgent(url),
       }, (upstreamRes) => {
+        if (ticket && upstreamRes.statusCode >= 200 && upstreamRes.statusCode < 300) {
+          const observer = new EventObserver(event => engine.observe(connection, event, ticket).then(result => usageMetric('http', result)));
+          const encoding = upstreamRes.headers['content-encoding'];
+          const decoder = !encoding || encoding === 'identity' ? null : encoding === 'gzip' ? zlib.createGunzip() :
+            encoding === 'br' ? zlib.createBrotliDecompress() : encoding === 'deflate' ? zlib.createInflate() :
+            encoding === 'zstd' && zlib.createZstdDecompress ? zlib.createZstdDecompress() : undefined;
+          if (decoder === null) {
+            upstreamRes.on('data', chunk => observer.push(chunk));
+            upstreamRes.on('end', () => engine.closeConnection(connection));
+          } else if (decoder) {
+            decoder.on('data', chunk => observer.push(chunk));
+            decoder.on('error', () => engine.fail(ticket));
+            decoder.on('end', () => engine.closeConnection(connection));
+            upstreamRes.pipe(decoder);
+          } else engine.fail(ticket);
+          // Streaming observation is registered before piping bytes to the client.
+        } else if (ticket) engine.fail(ticket);
         res.writeHead(upstreamRes.statusCode, headersFor(upstreamRes.headers));
         upstreamRes.on('error', () => res.destroy());
         upstreamRes.pipe(res);
@@ -120,6 +158,7 @@ function createProxy({ upstream = 'https://chatgpt.com/backend-api/codex', capab
       upstreamReq.setTimeout(10 * 60 * 1000, () => upstreamReq.destroy(new Error('upstream_timeout')));
       upstreamReq.on('error', () => {
         totals.failures++;
+        if (ticket) engine.fail(ticket);
         if (!res.headersSent) res.writeHead(502, { 'content-type': 'application/json' }).end('{"error":"image_guard_upstream_unavailable"}');
         else res.destroy();
       });
@@ -127,6 +166,7 @@ function createProxy({ upstream = 'https://chatgpt.com/backend-api/codex', capab
       upstreamReq.end(body);
     } catch (error) {
       totals.failures++;
+      if (ticket) engine.fail(ticket);
       if (!res.headersSent) res.writeHead(error.status || (error.code === 'ERR_BUFFER_TOO_LARGE' ? 413 : 400)).end('{"error":"image_guard_invalid_or_oversized_body"}');
       else res.destroy();
     }
@@ -144,11 +184,12 @@ function createProxy({ upstream = 'https://chatgpt.com/backend-api/codex', capab
     const protocols = String(req.headers['sec-websocket-protocol'] || '').split(',').map(s => s.trim()).filter(Boolean);
     const remote = new WebSocket(url, protocols, { headers: headersFor(req.headers, true),
       agent: proxyAgent(url), maxPayload: maxBytes, perMessageDeflate: false, handshakeTimeout: 30000 });
+    const connection = randomBytes(12).toString('hex');
     let local;
     let upgradeHeaders = {};
     remote.on('upgrade', response => { upgradeHeaders = headersFor(response.headers, true); });
     const stop = () => { if (local) local.terminate(); remote.terminate(); socket.destroy(); };
-    socket.on('close', () => remote.terminate());
+    socket.on('close', () => { remote.terminate(); engine.closeConnection(connection); });
     remote.on('error', () => { totals.failures++; stop(); });
     remote.on('unexpected-response', (_request, response) => {
       // Preserve HTTP status (including auth/rate-limit failures) for Codex recovery.
@@ -176,14 +217,15 @@ function createProxy({ upstream = 'https://chatgpt.com/backend-api/codex', capab
         local = ws;
         ws.on('error', stop);
         function bridge(from, to, transform) {
-          from.on('message', (data, binary) => {
+          from.on('message', async (data, binary) => {
             from.pause();
             let out = data;
             if (transform && !binary) {
-              const result = transformBuffer(data, true);
+              const result = await engine.prepare(data, { headers: identityHeaders(req.headers, origin.origin), upstream: origin.origin, websocket: true, connection });
               out = result.buffer;
               metric('websocket', data.length, out.length, result.stats);
             }
+            if (!transform && !binary) usageMetric('websocket', await engine.observe(connection, data));
             if (to.readyState !== WebSocket.OPEN) { stop(); return; }
             to.send(out, { binary }, error => { if (error) stop(); else from.resume(); });
           });
@@ -204,6 +246,7 @@ function createProxy({ upstream = 'https://chatgpt.com/backend-api/codex', capab
     draining = true;
     for (const socket of sockets) socket.destroy();
     server.close();
+    return engine.close();
   };
   server.guardPrefix = prefix;
   return server;

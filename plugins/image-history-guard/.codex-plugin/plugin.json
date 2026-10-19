@@ -1,16 +1,24 @@
 {
   "name": "image-history-guard",
-  "version": "0.1.0",
-  "description": "Deduplicate identical inline images in complete Codex requests through a reversible loopback proxy.",
-  "author": { "name": "adoin", "url": "https://github.com/adoin" },
+  "version": "0.2.0",
+  "description": "Stable per-conversation image references with confirmed response lineage, local recovery and reversible proxy routing.",
+  "author": {
+    "name": "adoin",
+    "url": "https://github.com/adoin"
+  },
   "repository": "https://github.com/adoin/ChatGPT-gloves",
   "license": "MIT",
   "skills": "./skills/",
   "interface": {
     "displayName": "Image History Guard",
-    "shortDescription": "Reduce repeated image uploads without rewriting history.",
+    "shortDescription": "Keep first images stable and reference repeats across turns.",
     "developerName": "adoin",
     "category": "Productivity",
-    "capabilities": ["Image request deduplication", "Local proxy lifecycle", "Reversible configuration"]
+    "capabilities": [
+      "Thread-isolated image references",
+      "Local image recovery",
+      "Confirmed response lineage",
+      "Reversible proxy lifecycle"
+    ]
   }
 }

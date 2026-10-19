@@ -1,84 +1,115 @@
 'use strict';
+const { randomBytes } = require('node:crypto');
+const { resolveIdentity } = require('./identity.cjs');
+const { ImageStore } = require('./image-store.cjs');
 
-const { createHash } = require('node:crypto');
-
-// Only traverse Responses input messages and structured tool outputs. Do not walk
-// arbitrary objects: tool definitions, arguments, encrypted reasoning and results
-// are not interchangeable with model input content.
-function imageIdentity(part) {
-  if (!part || part.type !== 'input_image' || typeof part.image_url !== 'string') return null;
-  const match = /^data:image\/[a-z0-9.+-]+;base64,([A-Za-z0-9+/]+={0,2})$/i.exec(part.image_url);
-  if (!match || match[1].length % 4 !== 0) return null;
-  const bytes = Buffer.from(match[1], 'base64');
-  if (bytes.toString('base64') !== match[1]) return null;
-  return { id: `IMG-${createHash('sha256').update(bytes).digest('hex')}`, bytes: bytes.length };
+function contentField(item) {
+  if (['function_call_output', 'custom_tool_call_output'].includes(item?.type)) return 'output';
+  if ((!item?.type || item.type === 'message') && item.role === 'user') return 'content';
+  return null;
+}
+function anchor(id, file) {
+  return `[Image History Guard: ${id}; original image follows. Local copy: ${file}. If the image is no longer visible in context, use view_image on that exact local path before judging its pixels.]`;
+}
+function reference(id, file) {
+  return `[Image History Guard: reference ${id}; identical to its earlier image in this response chain. Preserve prior observations. If the original is not visible, use view_image on ${file} before judging its pixels.]`;
+}
+const textPart = text => ({ type: 'input_text', text });
+function compactionOutput(payload) {
+  return ['compaction', 'context_compaction'].includes(payload?.type) ||
+    payload?.response?.output?.some(item => ['compaction', 'context_compaction'].includes(item.type));
 }
 
-function filterRequest(payload) {
-  const stats = { images: 0, uniqueImages: 0, removedImages: 0, inlineBytes: 0, removedInlineBytes: 0,
-    incremental: Boolean(payload?.previous_response_id) };
-  if (!payload || !Array.isArray(payload.input)) return { payload, stats, changed: false };
-  // An incremental payload is its own deduplication scope. Never infer which
-  // images remain upstream or modify previous_response_id to force a replay.
-  const groups = new Map();
-  const eligible = [];
-  for (let itemIndex = 0; itemIndex < payload.input.length; itemIndex++) {
-    const item = payload.input[itemIndex];
-    if (!item || typeof item !== 'object') continue;
-    const field = item.type === 'function_call_output' || item.type === 'custom_tool_call_output'
-      ? 'output' : ((!item.type || item.type === 'message') && item.role === 'user' ? 'content' : null);
-    if (!field || !Array.isArray(item[field])) continue;
-    eligible.push({ item, itemIndex, field });
-    item[field].forEach((part, index) => {
-      const identity = imageIdentity(part);
-      if (!identity) return;
-      const occurrence = { ...identity, itemIndex, field, index, part };
-      const group = groups.get(identity.id) || [];
-      group.push(occurrence);
-      groups.set(identity.id, group);
-      stats.images++;
-      stats.inlineBytes += Buffer.byteLength(part.image_url);
-    });
+class SessionFilter {
+  constructor(root, options = {}) {
+    this.store = new ImageStore(root, options);
+    this.responses = new Map();
+    this.pending = new Map();
   }
-  stats.uniqueImages = groups.size;
-  const replacements = new Map();
-  const key = (item, field, index) => `${item}:${field}:${index}`;
-  for (const [id, group] of groups) {
-    if (group.length < 2) continue;
-    const last = group[group.length - 1];
-    for (const occurrence of group.slice(0, -1)) {
-      replacements.set(key(occurrence.itemIndex, occurrence.field, occurrence.index), [{
-        type: 'input_text',
-        text: `[Image History Guard: duplicate ${id} intentionally omitted here. The identical image is retained at its last occurrence later in this request. Preserve conclusions already drawn from it.]`,
-      }]);
-      stats.removedImages++;
-      stats.removedInlineBytes += Buffer.byteLength(occurrence.part.image_url);
+  prepare(buffer, { headers = {}, upstream = '', websocket = false, compact = false } = {}) {
+    let payload;
+    try { payload = JSON.parse(buffer.toString('utf8')); } catch { return { buffer, stats: null }; }
+    if ((websocket && payload?.type !== 'response.create') || !Array.isArray(payload?.input)) return { buffer, stats: null };
+    const identity = websocket && !payload.client_metadata?.thread_id ? null : resolveIdentity(payload, headers, upstream);
+    const stats = { images: 0, removedImages: 0, restoredImages: 0, inlineBytes: 0, removedInlineBytes: 0, hashCacheHits: 0,
+      incremental: Boolean(payload.previous_response_id), scopeSkipped: !identity, unknownLineage: false };
+    if (!identity) return { buffer, stats };
+    const scope = identity.scope;
+    const lineageKey = id => `${scope}:${id}`;
+    if (compact) {
+      // Normal Codex summary owns context replacement. Do not alter its input.
+      for (const key of this.responses.keys()) if (key.startsWith(`${scope}:`)) this.responses.delete(key);
+      return { buffer, stats: { ...stats, compactionBypass: true } };
     }
-    replacements.set(key(last.itemIndex, last.field, last.index), [
-      { type: 'input_text', text: `[Image History Guard: ${id}; retained original for earlier duplicate references.]` },
-      last.part,
-    ]);
+    const ancestor = payload.previous_response_id ? this.responses.get(lineageKey(payload.previous_response_id)) : null;
+    const automaticCompaction = Boolean(payload.context_management?.length);
+    const known = new Set(automaticCompaction ? [] : (ancestor?.images || []));
+    stats.unknownLineage = Boolean(payload.previous_response_id && !ancestor);
+    const input = payload.input.slice();
+    let changed = false;
+    const reloadCalls = new Map(automaticCompaction ? [] : (ancestor?.reloads || []));
+    for (const item of payload.input) {
+      if (!['function_call', 'custom_tool_call'].includes(item?.type) || !item.call_id) continue;
+      const source = `${item.name || ''} ${item.arguments || item.input || ''}`.replace(/\\+/g, '/');
+      if (/view_image/.test(source)) reloadCalls.set(item.call_id, source);
+    }
+    for (let i = 0; i < input.length; i++) {
+      const item = input[i];
+      const field = contentField(item);
+      if (!field || !Array.isArray(item[field])) continue;
+      const content = [];
+      let itemChanged = false;
+      for (let j = 0; j < item[field].length; j++) {
+        const part = item[field][j];
+        const image = this.store.identify(part);
+        if (!image) { content.push(part); continue; }
+        stats.images++; stats.inlineBytes += Buffer.byteLength(part.image_url);
+        if (image.cached) stats.hashCacheHits++;
+        const existing = this.store.locate(scope, image);
+        const file = this.store.put(scope, image, part.image_url)?.replace(/\\/g, '/');
+        if (!file) { content.push(part); continue; }
+        const explicitReload = reloadCalls.get(item.call_id)?.includes(file);
+        if (explicitReload) stats.restoredImages++;
+        const originalLabel = anchor(image.id, file);
+        // Existing annotations are left stable if a client ever replays them.
+        const alreadyLabelled = item[field][j - 1]?.type === 'input_text' && item[field][j - 1].text === originalLabel;
+        if (alreadyLabelled) {
+          content.push(part); known.add(image.id); continue;
+        }
+        if (known.has(image.id) && existing && !explicitReload) {
+          content.push(textPart(reference(image.id, file)));
+          stats.removedImages++; stats.removedInlineBytes += Buffer.byteLength(part.image_url);
+        } else {
+          content.push(textPart(originalLabel), part);
+          known.add(image.id);
+        }
+        itemChanged = true;
+      }
+      if (itemChanged) { input[i] = { ...item, [field]: content }; changed = true; }
+    }
+    // A stored blob is not proof of upstream context. Commit only on a valid,
+    // successful response.completed event; aborted/failed requests never seed it.
+    const ticket = randomBytes(16).toString('hex');
+    this.pending.set(ticket, { scope, known: automaticCompaction ? new Set() : known, reloads: reloadCalls, at: Date.now() });
+    for (const [key, item] of this.pending) if (Date.now() - item.at > 600000 || this.pending.size > 128) this.pending.delete(key);
+    return { buffer: changed ? Buffer.from(JSON.stringify({ ...payload, input })) : buffer, stats: { ...stats, ...this.store.stats() }, ticket,
+      streamId: typeof payload.stream_id === 'string' ? payload.stream_id : undefined };
   }
-  if (!stats.removedImages) return { payload, stats, changed: false };
-  const input = payload.input.slice();
-  for (const { item, itemIndex, field } of eligible) {
-    if (!item[field].some((_, index) => replacements.has(key(itemIndex, field, index)))) continue;
-    input[itemIndex] = { ...item, [field]: item[field].flatMap((part, index) =>
-      replacements.get(key(itemIndex, field, index)) || [part]) };
+  noteOutput(ticket, item) {
+    const pending = this.pending.get(ticket);
+    if (!pending || !['function_call', 'custom_tool_call'].includes(item?.type) || !item.call_id) return;
+    const source = `${item.name || ''} ${item.arguments || item.input || ''}`.replace(/\\+/g, '/');
+    if (/view_image/.test(source)) pending.reloads.set(item.call_id, source);
   }
-  return { payload: { ...payload, input }, stats, changed: true };
+  complete(ticket, responseId, compacted = false) {
+    const pending = this.pending.get(ticket);
+    this.pending.delete(ticket);
+    if (!pending || typeof responseId !== 'string' || !responseId || responseId.length > 512) return;
+    const key = `${pending.scope}:${responseId}`;
+    this.responses.set(key, { images: compacted ? new Set() : new Set([...pending.known].slice(-512)),
+      reloads: compacted ? new Map() : new Map([...pending.reloads].slice(-128)) });
+    while (this.responses.size > 512) this.responses.delete(this.responses.keys().next().value);
+  }
+  fail(ticket) { this.pending.delete(ticket); }
 }
-
-function transformBuffer(buffer, websocket = false) {
-  try {
-    const parsed = JSON.parse(buffer.toString('utf8'));
-    if (websocket && parsed?.type !== 'response.create') return { buffer, stats: null };
-    const result = filterRequest(parsed);
-    return { buffer: result.changed ? Buffer.from(JSON.stringify(result.payload)) : buffer, stats: result.stats };
-  } catch {
-    // Unknown shapes and invalid JSON are forwarded byte-for-byte.
-    return { buffer, stats: null };
-  }
-}
-
-module.exports = { filterRequest, transformBuffer, imageIdentity };
+module.exports = { SessionFilter, contentField, anchor, reference, compactionOutput };

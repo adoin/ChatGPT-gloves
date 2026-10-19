@@ -13,12 +13,14 @@ const { spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '../plugins/image-history-guard');
 const localRequire = createRequire(path.join(root, 'package.json'));
 const { WebSocket, WebSocketServer } = localRequire('ws');
-const { filterRequest, transformBuffer } = require(path.join(root, 'lib/filter.cjs'));
 const { createProxy } = require(path.join(root, 'lib/proxy.cjs'));
 const { attachConfig, detachConfig, control } = require(path.join(root, 'scripts/guard.cjs'));
-const image = (value = 'one') => ({ type: 'input_image', image_url: `data:image/png;base64,${Buffer.from(value.repeat(200)).toString('base64')}`, detail: 'high' });
+const image = (value = 'one') => ({ type: 'input_image', image_url: `data:image/png;base64,${Buffer.from(value.repeat(2000)).toString('base64')}`, detail: 'high' });
 const message = (...content) => ({ role: 'user', content });
 const capability = 'a'.repeat(48);
+const THREAD = '11111111-1111-4111-8111-111111111111';
+const nativeFetch = global.fetch;
+const fetch = (url, options = {}) => nativeFetch(url, { ...options, headers: { authorization: 'Bearer test', 'x-client-request-id': THREAD, ...options.headers } });
 async function listen(server) {
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   return `http://127.0.0.1:${server.address().port}`;
@@ -26,48 +28,13 @@ async function listen(server) {
 async function setup(t, handler, options = {}) {
   const upstream = http.createServer(handler);
   const url = await listen(upstream);
-  const guard = createProxy({ upstream: `${url}/backend-api/codex`, capability, allowLocalUpstream: true, ...options });
+  const imageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'image-guard-http-test-'));
+  const guard = createProxy({ upstream: `${url}/backend-api/codex`, capability, allowLocalUpstream: true, imageRoot, ...options });
   const local = await listen(guard);
-  t.after(() => { guard.guardClose(); upstream.closeAllConnections(); upstream.close(); });
+  t.after(async () => { await guard.guardClose(); upstream.closeAllConnections(); upstream.close(); fs.rmSync(imageRoot, { recursive: true, force: true }); });
   return { upstream, guard, base: `${local}${guard.guardPrefix}` };
 }
 async function body(req) { const chunks = []; for await (const chunk of req) chunks.push(chunk); return Buffer.concat(chunks); }
-
-test('duplicates across messages/tool outputs retain only the last original with stable references', () => {
-  const original = { input: [message(image()), { type: 'function_call_output', call_id: 'call-1',
-    output: [{ type: 'input_text', text: 'found' }, image()] }, message(image('other'))],
-    tools: [{ type: 'function', parameters: { example: image() } }] };
-  const snapshot = JSON.stringify(original);
-  const { payload, stats } = filterRequest(original);
-  assert.equal(stats.removedImages, 1);
-  assert.equal(stats.uniqueImages, 2);
-  assert.equal(payload.input[0].content[0].type, 'input_text');
-  assert.equal(payload.input[1].call_id, 'call-1');
-  assert.deepEqual(payload.input[1].output.at(-1), image());
-  const id = payload.input[0].content[0].text.match(/IMG-[a-f0-9]{64}/)[0];
-  assert.ok(payload.input[1].output.at(-2).text.includes(id));
-  assert.deepEqual(payload.input[2], original.input[2]);
-  assert.strictEqual(payload.tools, original.tools);
-  assert.equal(JSON.stringify(original), snapshot, 'does not mutate source history');
-  assert.equal(filterRequest(payload).changed, false, 'transformation is idempotent');
-});
-
-test('unique/current images and opaque fields stay unchanged; incremental lineage is preserved', () => {
-  const input = [message(image()), { type: 'function_call', arguments: JSON.stringify(image()) },
-    { type: 'function_call_output', output: JSON.stringify([image()]) },
-    { type: 'image_generation_call', result: image().image_url }];
-  assert.equal(filterRequest({ input }).changed, false);
-  const incremental = { previous_response_id: 'resp-1', input: [message(image())] };
-  assert.strictEqual(filterRequest(incremental).payload, incremental);
-  const delta = filterRequest({ previous_response_id: 'resp-1', input: [message(image(), image())] });
-  assert.equal(delta.payload.previous_response_id, 'resp-1');
-  assert.equal(delta.stats.removedImages, 1);
-  for (const raw of ['not JSON', '{ "input": "hello" }', JSON.stringify({ input })]) {
-    const buffer = Buffer.from(raw); assert.strictEqual(transformBuffer(buffer).buffer, buffer);
-  }
-  const cancel = Buffer.from(JSON.stringify({ type: 'response.cancel', input: [message(image(), image())] }));
-  assert.strictEqual(transformBuffer(cancel, true).buffer, cancel);
-});
 
 test('HTTP forwards auth, query, SSE bytes and correct filtered lengths', async t => {
   const input = { input: [message(image()), message(image())] };
@@ -97,14 +64,14 @@ test('compressed bodies deduplicate; opaque unknown encodings are byte-preserved
   const { base } = await setup(t, async (req, res) => { received.push({ data: await body(req), headers: req.headers }); res.end('{}'); });
   const raw = Buffer.from(JSON.stringify({ input: [message(image(), image())] }));
   for (const [encoding, encode] of [['gzip', zlib.gzipSync], ['deflate', zlib.deflateSync], ['br', zlib.brotliCompressSync]]) {
-    await (await fetch(`${base}/responses/compact`, { method: 'POST', headers: {
+    await (await fetch(`${base}/responses`, { method: 'POST', headers: {
       'content-type': 'application/json', 'content-encoding': encoding,
     }, body: encode(raw) })).text();
     const result = received.at(-1);
     assert.equal(result.headers['content-encoding'], undefined);
     assert.equal(JSON.parse(result.data).input[0].content.filter(p => p.type === 'input_image').length, 1);
   }
-  const unique = zlib.gzipSync(Buffer.from(JSON.stringify({ input: [message(image())] })));
+  const unique = zlib.gzipSync(Buffer.from(JSON.stringify({ input: [message({ type: 'input_text', text: 'hello' })] })));
   await (await fetch(`${base}/responses`, { method: 'POST', headers: {
     'content-type': 'application/json', 'content-encoding': 'gzip',
   }, body: unique })).text();
@@ -131,6 +98,40 @@ test('restricted local routing, origin rejection, size bounds and upstream error
   assert.equal(oversized.status, 413); assert.equal(calls, 1);
 });
 
+test('HTTP completion enables a later reference, while failures and unknown lineage retain originals', async t => {
+  const requests = [];
+  let count = 0;
+  const { base } = await setup(t, async (req, res) => {
+    const payload = JSON.parse(await body(req)); requests.push(payload);
+    const id = `response-${++count}`;
+    if (count === 3) { res.writeHead(500).end('{}'); return; }
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.write('data: ' + JSON.stringify({ type: 'response.created', response: { id } }) + '\n\n');
+    res.end('data: ' + JSON.stringify({ type: 'response.completed', response: { id, status: 'completed', output: [],
+      usage: { input_tokens: 2000, input_tokens_details: { cached_tokens: 1500 }, output_tokens: 10 } } }) + '\n\n');
+  });
+  const send = previous => fetch(`${base}/responses`, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ input: [message(image())], ...(previous ? { previous_response_id: previous } : {}) }) }).then(r => r.text());
+  await send(); await send('response-1');
+  assert.equal(requests[0].input[0].content.filter(p => p.type === 'input_image').length, 1);
+  assert.equal(requests[1].input[0].content.filter(p => p.type === 'input_image').length, 0);
+  await send('missing-response'); await send('response-3');
+  assert.equal(requests[3].input[0].content.filter(p => p.type === 'input_image').length, 1);
+  const status = await (await fetch(`${base}/_guard/status`)).json();
+  assert.equal(status.removedImages, 1);
+  assert.equal(status.inputTokens, 6000);
+  assert.equal(status.cachedInputTokens, 4500);
+});
+
+test('compaction input and unidentified requests remain byte-identical', async t => {
+  const requests = [];
+  const { base } = await setup(t, async (req, res) => { requests.push(await body(req)); res.end('{}'); });
+  const raw = JSON.stringify({ input: [message(image(), image())] });
+  await (await fetch(`${base}/responses/compact`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: raw })).text();
+  await (await nativeFetch(`${base}/responses`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: raw })).text();
+  assert.equal(requests[0].toString(), raw); assert.equal(requests[1].toString(), raw);
+});
+
 test('WebSocket filters images and preserves incremental lineage, binary, output and close semantics', async t => {
   const { upstream, base } = await setup(t, (_req, res) => res.end('{}'));
   const wss = new WebSocketServer({ server: upstream });
@@ -142,19 +143,20 @@ test('WebSocket filters images and preserves incremental lineage, binary, output
     auth = req.headers.authorization;
     socket.on('message', (data, binary) => { received.push(data); socket.send(data, { binary }); });
   });
-  const ws = new WebSocket(`${base.replace('http:', 'ws:')}/responses`, { headers: { authorization: 'Bearer test' } });
+  const ws = new WebSocket(`${base.replace('http:', 'ws:')}/responses`, { headers: { authorization: 'Bearer test', 'x-client-request-id': THREAD } });
   let turnState;
   ws.on('upgrade', response => { turnState = response.headers['x-codex-turn-state']; });
   t.after(() => ws.terminate());
   await once(ws, 'open');
   assert.equal(turnState, 'test-turn-state');
-  const full = { type: 'response.create', input: [message(image(), image())] };
+  const full = { type: 'response.create', client_metadata: { thread_id: THREAD }, input: [message(image(), image())] };
   ws.send(JSON.stringify(full));
   let [data] = await once(ws, 'message');
   assert.equal(JSON.parse(data).input[0].content.filter(p => p.type === 'input_image').length, 1);
   assert.equal(auth, 'Bearer test');
-  const delta = JSON.stringify({ type: 'response.create', previous_response_id: 'response-previous', input: [message(image())] });
-  ws.send(delta); [data] = await once(ws, 'message'); assert.equal(data.toString(), delta);
+  const delta = JSON.stringify({ type: 'response.create', client_metadata: { thread_id: THREAD }, previous_response_id: 'response-previous', input: [message(image())] });
+  ws.send(delta); [data] = await once(ws, 'message'); assert.equal(JSON.parse(data).previous_response_id, 'response-previous');
+  assert.equal(JSON.parse(data).input[0].content.filter(p => p.type === 'input_image').length, 1);
   ws.send(Buffer.from([1, 2, 3]), { binary: true });
   const [binary, isBinary] = await once(ws, 'message'); assert.equal(isBinary, true); assert.deepEqual(binary, Buffer.from([1, 2, 3]));
   const closed = once(ws, 'close');
@@ -193,7 +195,13 @@ test('controller enables a copied runtime, restarts it, disables without losing 
   assert.equal((await control('status', home)).running, true);
   assert.equal((await control('enable', home)).enabled, true, 'idempotent enable');
   const stateFile = path.join(home, 'plugins/data/image-history-guard-chatgpt-gloves/installation.json');
-  const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  let state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  const previousBase = state.baseUrl;
+  fs.writeFileSync(stateFile, JSON.stringify({ ...state, runtime: path.join(home, 'old-runtime') }));
+  assert.equal((await control('upgrade', home)).upgraded, true);
+  state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  assert.notEqual(state.baseUrl, previousBase);
+  assert.equal((await nativeFetch(previousBase + '/_guard/status')).status, 200, 'upgrade keeps old clients connected');
   await fetch(`${state.baseUrl}/_guard/shutdown`, { method: 'POST' });
   await new Promise(resolve => setTimeout(resolve, 100));
   assert.equal((await control('status', home)).running, false);
