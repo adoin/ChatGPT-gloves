@@ -1,0 +1,16 @@
+{
+  "name": "image-history-guard",
+  "version": "0.1.0",
+  "description": "Deduplicate identical inline images in complete Codex requests through a reversible loopback proxy.",
+  "author": { "name": "adoin", "url": "https://github.com/adoin" },
+  "repository": "https://github.com/adoin/ChatGPT-gloves",
+  "license": "MIT",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Image History Guard",
+    "shortDescription": "Reduce repeated image uploads without rewriting history.",
+    "developerName": "adoin",
+    "category": "Productivity",
+    "capabilities": ["Image request deduplication", "Local proxy lifecycle", "Reversible configuration"]
+  }
+}

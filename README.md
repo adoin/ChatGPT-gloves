@@ -2,6 +2,10 @@
 
 Reusable Codex plugins and skills.
 
+## Image History Guard
+
+[Image History Guard](plugins/image-history-guard/README.md) is an opt-in, reversible local proxy that keeps the last occurrence of identical inline images within each Codex request's supplied input. It preserves original transcripts and incremental request lineage. It does not remove distinct images or eliminate single-image replay across turns. HTTP/SSE and WebSocket transports are supported; activation and rollback are explicit, and Node/npm are required.
+
 ## Test Gate
 
 ## Local SSH Deploy

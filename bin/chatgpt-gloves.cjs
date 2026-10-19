@@ -14,6 +14,10 @@ function verify() {
   const marketplace = readJson(marketplacePath);
   const pluginRequirements = [
     {
+      name: "image-history-guard",
+      files: ["package.json", "package-lock.json", "lib/filter.cjs", "lib/proxy.cjs", "scripts/guard.cjs", "hooks/hooks.json", "hooks/session-start.cjs", "skills/image-history-guard/SKILL.md"]
+    },
+    {
       name: "conversation-lifeboat",
       files: [
         "hooks/hooks.json",
