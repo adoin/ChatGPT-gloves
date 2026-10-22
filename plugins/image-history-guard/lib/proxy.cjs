@@ -13,7 +13,7 @@ const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 const { FilterEngine, EventObserver } = require('./engine.cjs');
 const { identityHeaders } = require('./identity.cjs');
-const VERSION = '0.2.2';
+const VERSION = '0.2.3';
 
 const MAX_BYTES = 128 * 1024 * 1024;
 const HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
@@ -85,6 +85,7 @@ function createProxy({ upstream = 'https://chatgpt.com/backend-api/codex', capab
     if (req.headers.origin || draining) return null;
     if (req.url === `${prefix}/_guard/status`) return 'status';
     if (req.url === `${prefix}/_guard/shutdown`) return 'shutdown';
+    if (req.url === `${prefix}/_guard/retire`) return 'retire';
     if (!req.url?.startsWith(`${prefix}/`)) return null;
     const suffix = req.url.slice(prefix.length);
     const url = new URL(origin);
@@ -110,13 +111,13 @@ function createProxy({ upstream = 'https://chatgpt.com/backend-api/codex', capab
     if (url === 'status') {
       if (req.method !== 'GET') { res.writeHead(405).end(); return; }
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-      res.end(JSON.stringify({ service: 'image-history-guard', version: VERSION, pid: process.pid, ...totals, ...(await engine.stats()), ...engine.status() }));
+      res.end(JSON.stringify({ service: 'image-history-guard', version: VERSION, retirementSupported: true, pid: process.pid, ...totals, ...(await engine.stats()), ...engine.status() }));
       return;
     }
-    if (url === 'shutdown') {
+    if (url === 'shutdown' || url === 'retire') {
       if (req.method !== 'POST') { res.writeHead(405).end(); return; }
       res.writeHead(200).end('{}');
-      setImmediate(() => server.guardClose());
+      setImmediate(() => url === 'retire' ? server.guardRetire() : server.guardClose());
       return;
     }
     let ticket;
@@ -271,6 +272,16 @@ function createProxy({ upstream = 'https://chatgpt.com/backend-api/codex', capab
     for (const socket of sockets) socket.destroy();
     server.close();
     return engine.close();
+  };
+  // Stop accepting new clients, but let active HTTP/WS connections finish.
+  // Existing WebSockets keep their engine until their client disconnects.
+  server.guardRetire = () => {
+    diagnostic({ event: 'proxy_retired', version: VERSION });
+    server.close();
+    server.closeIdleConnections();
+    const closeWhenIdle = () => { if (!sockets.size) engine.close(); };
+    for (const socket of sockets) socket.once('close', closeWhenIdle);
+    closeWhenIdle();
   };
   server.guardPrefix = prefix;
   diagnostic({ event: 'proxy_created', version: VERSION });

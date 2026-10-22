@@ -35,7 +35,7 @@ npm ci --ignore-scripts --no-audit --no-fund
 node scripts/guard.cjs upgrade
 ```
 
-Restart Codex after enable/upgrade. Upgrade starts a fresh runtime on a new port and keeps the previous listener alive for running clients. This avoids interrupting other active chats. The config change is reversible and preserves unrelated edits. Existing custom provider routes are refused.
+Restart Codex after enable/upgrade. Upgrade starts a fresh runtime on a new port and temporarily keeps the previous listener alive. On the next startup check, once the current service is healthy, previous listeners stop accepting connections and drain active HTTP/WebSocket connections before exiting. Legacy versions without graceful retirement support are shut down; their clients must restart. Subsequent checks prune exited process records. SessionStart also runs for new/resumed chats, so it is not proof that every old client has restarted. The config change is reversible and preserves unrelated edits. Existing custom provider routes are refused.
 
 Review the bundled startup hook using Codex's normal trust flow. It only restarts an explicitly enabled installation. No OS service or certificate is installed. Without the trusted hook, run `node scripts/guard.cjs start` after reboot. HTTP_PROXY/HTTPS_PROXY/NO_PROXY are respected; system proxy configuration is not auto-detected. The proxy must be running while its route is configured.
 

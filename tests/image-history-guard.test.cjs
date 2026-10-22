@@ -36,6 +36,23 @@ async function setup(t, handler, options = {}) {
 }
 async function body(req) { const chunks = []; for await (const chunk of req) chunks.push(chunk); return Buffer.concat(chunks); }
 
+test('retirement stops new connections while an active response completes', async t => {
+  let finish;
+  const { base } = await setup(t, (_req, res) => {
+    res.writeHead(200); res.write('first');
+    finish = () => res.end('last');
+  });
+  const active = await fetch(`${base}/future/stream`);
+  const reader = active.body.getReader();
+  assert.equal(Buffer.from((await reader.read()).value).toString(), 'first');
+  assert.equal((await fetch(`${base}/_guard/retire`, { method: 'POST' })).status, 200);
+  await new Promise(resolve => setTimeout(resolve, 50));
+  await assert.rejects(fetch(`${base}/_guard/status`));
+  finish();
+  assert.equal(Buffer.from((await reader.read()).value).toString(), 'last');
+  assert.equal((await reader.read()).done, true);
+});
+
 test('HTTP forwards auth, query, SSE bytes and correct filtered lengths', async t => {
   const input = { input: [message(image()), message(image())] };
   let received;
@@ -261,6 +278,11 @@ test('controller enables a copied runtime, restarts it, disables without losing 
   state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
   assert.notEqual(state.baseUrl, previousBase);
   assert.equal((await nativeFetch(previousBase + '/_guard/status')).status, 200, 'upgrade keeps old clients connected');
+  assert.equal((await control('start', home)).retiredListeners, 1, 'startup retires the previous listener');
+  await new Promise(resolve => setTimeout(resolve, 100));
+  await assert.rejects(nativeFetch(previousBase + '/_guard/status'), 'retired listener no longer accepts clients');
+  await control('start', home);
+  assert.equal(JSON.parse(fs.readFileSync(stateFile, 'utf8')).retired.length, 0, 'dead retirement records are pruned');
   await fetch(`${state.baseUrl}/_guard/shutdown`, { method: 'POST' });
   await new Promise(resolve => setTimeout(resolve, 100));
   assert.equal((await control('status', home)).running, false);

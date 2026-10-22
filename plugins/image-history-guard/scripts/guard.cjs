@@ -10,7 +10,7 @@ const { parse } = require('smol-toml');
 
 const BEGIN = '# BEGIN image-history-guard (managed)';
 const END = '# END image-history-guard (managed)';
-const VERSION = '0.2.2';
+const VERSION = '0.2.3';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function settings(home) {
@@ -51,6 +51,35 @@ async function health(state) {
 async function stop(state) {
   try { await fetch(`${state.baseUrl}/_guard/shutdown`, { method: 'POST', signal: AbortSignal.timeout(2000) }); }
   catch { /* Already stopped; do not kill by potentially recycled PID. */ }
+}
+async function reapRetired(state, file) {
+  const retained = [];
+  let retiredListeners = 0;
+  for (const old of state.retired || []) {
+    if (old.baseUrl === state.baseUrl) continue;
+    const info = await health(old);
+    if (info) {
+      try {
+        // Legacy runtimes have no graceful retirement endpoint. The user's
+        // startup cleanup policy permits retiring these via authenticated stop.
+        if (!info.retirementSupported) await stop(old);
+        else {
+          const response = await fetch(`${old.baseUrl}/_guard/retire`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+          if (!response.ok) { retained.push(old); continue; }
+        }
+        retiredListeners++;
+      } catch { retained.push(old); continue; }
+    }
+    // A retired listener can still be draining active WebSockets. Keep its
+    // record until the process exits; never kill a potentially recycled PID.
+    if (Number.isSafeInteger(old.pid) && old.pid > 0) {
+      try { process.kill(old.pid, 0); retained.push(old); } catch (error) {
+        if (error.code !== 'ESRCH') retained.push(old);
+      }
+    }
+  }
+  save(file, { ...state, retired: retained });
+  return { retiredListeners, retainedProcesses: retained.length };
 }
 async function serve(file) {
   const state = readState(file);
@@ -200,7 +229,8 @@ async function control(command, home) {
     if (command === 'start') {
       const state = readState(paths.state);
       const running = await health(state) || await health(await launch(paths.state, state.runtime));
-      return { running: Boolean(running), ...running };
+      const cleanup = running ? await reapRetired(readState(paths.state), paths.state) : {};
+      return { running: Boolean(running), ...running, ...cleanup };
     }
     if (command !== 'enable') throw new Error('Expected enable, upgrade, disable, start, stop, or status.');
     if (fs.existsSync(paths.state)) {
