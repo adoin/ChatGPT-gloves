@@ -220,6 +220,22 @@ test('configuration changes preserve unrelated TOML and refuse routing conflicts
   assert.throws(() => detachConfig(enabled.replace(':9/', ':10/'), url));
 });
 
+test('dead owned operation locks recover, while live or ownerless locks remain protected', async t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'image-guard-lock-test-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const lock = path.join(home, 'plugins/data/image-history-guard-chatgpt-gloves/operation.lock');
+  fs.mkdirSync(lock, { recursive: true });
+  await assert.rejects(control('start', home), { code: 'GUARD_LOCK_BUSY' });
+  assert.equal(fs.existsSync(lock), true);
+  const ownerFile = path.join(lock, 'owner.json');
+  fs.writeFileSync(ownerFile, JSON.stringify({ pid: process.pid, nonce: 'live-owner' }));
+  await assert.rejects(control('start', home), { code: 'GUARD_LOCK_BUSY' });
+  const exited = spawnSync(process.execPath, ['-e', ''], { windowsHide: true });
+  fs.writeFileSync(ownerFile, JSON.stringify({ pid: exited.pid, nonce: 'dead-owner' }));
+  await assert.rejects(control('start', home), { code: 'ENOENT' });
+  assert.equal(fs.existsSync(lock), false);
+});
+
 test('controller enables a copied runtime, restarts it, disables without losing edits, and stops', async t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'image-guard-lifecycle-'));
   const config = path.join(home, 'config.toml');

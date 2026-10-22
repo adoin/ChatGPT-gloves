@@ -10,7 +10,7 @@ const { parse } = require('smol-toml');
 
 const BEGIN = '# BEGIN image-history-guard (managed)';
 const END = '# END image-history-guard (managed)';
-const VERSION = '0.2.1';
+const VERSION = '0.2.2';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function settings(home) {
@@ -110,8 +110,35 @@ function prepareRuntime(data) {
 async function withLock(paths, action) {
   fs.mkdirSync(paths.data, { recursive: true });
   const lock = path.join(paths.data, 'operation.lock');
-  try { fs.mkdirSync(lock); } catch { throw new Error('Another operation is in progress (operation.lock).'); }
-  try { return await action(); } finally { fs.rmdirSync(lock); }
+  const ownerFile = path.join(lock, 'owner.json');
+  const busy = () => Object.assign(new Error('Another operation is in progress or a legacy lock needs review.'), { code: 'GUARD_LOCK_BUSY' });
+  try { fs.mkdirSync(lock); } catch {
+    const recoveryLock = path.join(paths.data, 'operation-recovery.lock');
+    try { fs.mkdirSync(recoveryLock); } catch { throw busy(); }
+    try {
+      let owner;
+      try { owner = JSON.parse(fs.readFileSync(ownerFile, 'utf8')); } catch { throw busy(); }
+      if (!Number.isSafeInteger(owner.pid) || owner.pid < 1 || typeof owner.nonce !== 'string') throw busy();
+      try { process.kill(owner.pid, 0); throw busy(); }
+      catch (error) { if (error.code !== 'ESRCH') throw busy(); }
+      // Serialize stale-owner recovery so two cleaners cannot remove the new
+      // owner's metadata. Ownerless legacy locks always require review.
+      const current = JSON.parse(fs.readFileSync(ownerFile, 'utf8'));
+      if (current.nonce !== owner.nonce || current.pid !== owner.pid) throw busy();
+      fs.unlinkSync(ownerFile); fs.rmdirSync(lock); fs.mkdirSync(lock);
+    } finally { fs.rmdirSync(recoveryLock); }
+  }
+  const owner = { pid: process.pid, nonce: crypto.randomBytes(16).toString('hex') };
+  try {
+    fs.writeFileSync(ownerFile, JSON.stringify(owner), { flag: 'wx', mode: 0o600 });
+    return await action();
+  } finally {
+    let current;
+    try { current = JSON.parse(fs.readFileSync(ownerFile, 'utf8')); } catch { /* interrupted acquisition */ }
+    if (current?.nonce === owner.nonce && current.pid === owner.pid) {
+      fs.unlinkSync(ownerFile); fs.rmdirSync(lock);
+    }
+  }
 }
 
 async function control(command, home) {
@@ -218,9 +245,10 @@ async function main() {
   const home = path.resolve(option('--codex-home') || process.env.CODEX_HOME || path.join(os.homedir(), '.codex'));
   console.log(JSON.stringify(await control(command, home)));
 }
-if (require.main === module) main().catch(() => {
+if (require.main === module) main().catch(error => {
   // Errors can include request headers/URLs in dependency messages. Do not dump them.
-  process.stderr.write('Image History Guard operation failed. Check routing conflicts, npm availability, and proxy status; configuration was not forcibly overwritten.\n');
+  const code = /^GUARD_[A-Z_]+$/.test(error.code || '') ? ` (${error.code})` : '';
+  process.stderr.write(`Image History Guard operation failed${code}. Check routing conflicts, npm availability, and proxy status; configuration was not forcibly overwritten.\n`);
   process.exitCode = 1;
 });
 module.exports = { attachConfig, detachConfig, control };
