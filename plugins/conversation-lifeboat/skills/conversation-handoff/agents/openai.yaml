@@ -4,4 +4,4 @@ interface:
   default_prompt: "Use $conversation-handoff to update durable project specifications and continue the current execution state in a fresh task prompt without translating my requirements."
 
 policy:
-  allow_implicit_invocation: true
+  allow_implicit_invocation: false

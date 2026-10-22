@@ -1,6 +1,6 @@
 ---
 name: conversation-handoff
-description: Update durable project specifications and continue transient execution context in a fresh Codex task after the user confirms migration from a long, slow, repeatedly compacted, oversized, or unstable conversation. Preserve the user's original wording and language. Also use for an explicitly requested context-preserving task handoff. Use spec-update for in-place specification refreshes without task creation.
+description: Manually hand off work to a fresh Codex task when the user explicitly requests migration. Update durable project specifications and preserve transient execution context and the user's original language. Use spec-update for in-place specification refreshes without task creation.
 ---
 
 # Conversation Handoff
@@ -9,17 +9,15 @@ Keep durable project intent and approved project-level TODOs in repository-owned
 
 For a specification update that must remain in the current task, use `$spec-update` instead.
 
-## Automatic health evidence
+## Manual invocation only
 
-- Do not recommend migration merely because token count, context-window percentage, transcript total size, or successful automatic compaction is high. Missing/stale token usage is diagnostic uncertainty, not a migration trigger.
-- Health hooks inspect bounded history samples for inline image bytes, duplicate image payloads, rapid image growth, and recent explicit connection/compaction failures. These are risk signals, not measured outgoing request bytes or proof of a Codex bug. Check whether compaction or a successful response has already cleared the problem.
-- When a user reports reconnection, reassess recent failures even if an earlier check was healthy. A single unexplained failure calls for diagnosis; persistent failures or abnormal image retention can justify a brief handoff offer. Continue the requested work rather than ending the turn solely to ask about migration.
-- Respect the user's choice to stay. Do not repeat an offer at the same or lower severity; explain any material escalation before offering again. A health warning never authorizes migration.
+- Run this workflow only when the user explicitly requests a handoff/migration or invokes `$conversation-handoff`. This plugin performs no automatic health monitoring, threshold checks, reconnect detection or unsolicited migration reminders.
+- A reconnect report, long history, image count, token usage or old health-hook evidence does not trigger this workflow. Diagnose a reported issue within the requested scope; wait for an explicit migration request before preparing or creating a continuation task.
 
 ## Authorization boundary
 
 - Treat an explicit user request to migrate, hand off, or continue in a new task as authorization.
-- A health warning by itself is not authorization. Ask once and wait for the user's confirmation.
+- If the user only asks about migration without requesting it, explain the workflow and wait. An explicit migration request is sufficient; do not ask for duplicate confirmation.
 - Do not delete, truncate, rewrite, or relocate the old transcript.
 - Do not archive the old task until the new task exists. Archive it only when the user requested that action.
 

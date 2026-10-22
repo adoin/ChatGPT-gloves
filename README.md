@@ -14,21 +14,14 @@ Local SSH Deploy opens a native form and securely persists named deployment prof
 
 ## Conversation Lifeboat
 
-Conversation Lifeboat detects abnormal inline-image retention and recent connection/compaction failures. Token count, context-window percentage, transcript total size, stale/missing usage, and normal successful automatic compaction never independently trigger a warning or migration offer. The old token/ratio/total-size threshold variables are retired and ignored in 0.3.0.
-
-The monitor scans at most 16 MiB of the transcript tail (configurable, capped at 64 MiB), processes only actual response items rather than mirrored UI events, hashes image data in memory, and records metrics only. It detects inline data URLs, including serialized tool-output image URLs, and explicit generated-image result payloads. Observed image-byte counters accumulate across append-only checks without rescanning old history and reset at observed compaction boundaries. Gaps, large partial records, and content outside the sample mean these are lower-bound history estimates, not actual request-body measurements or proof that every image was resent.
-
-Defaults: 8 MiB observed retained image data, 4 MiB sampled duplicate data, or 8 MiB new image data within 10 minutes prompts a nonblocking review. At 24 MiB retained image data, at least 4 MiB of duplicates making up half the sampled image bytes, image risk plus a recent failure, or persistent failures, the assistant may briefly offer migration while continuing work. At 48 MiB retained image data severity becomes critical. These are configurable operational heuristics, not protocol limits. A single connection failure forces diagnosis, not a handoff offer. Successful token-usage events clear older failure signals; normal repeated compaction alone does not trigger migration.
-
-A current user report of reconnection, disconnected streams, or timeout bypasses notification cooldown for reassessment. Only current reports and explicit recent transcript error events are considered; historical assistant messages and command-output examples are not failure evidence. There is no live reconnect hook, so a stalled network request cannot be intercepted by this monitor. User-declined offers remain suppressed at the same or lower severity, including after cooldown. Explicit migration confirmation is still required. Pending token-based offers from 0.2.2 are cleared on upgrade.
+Conversation Lifeboat 0.4 is manual-only. Invoke `$conversation-handoff` when you want to continue work in a fresh task, or `$spec-update` to refresh durable specifications in place. It no longer monitors conversation health, scans history, detects reconnections, or sends unsolicited migration reminders. The former detector remains recoverable in Git history; legacy health state does not trigger any workflow.
 
 The plugin contains:
 
 - `conversation-handoff`: a confirmation-gated Skill that updates durable specifications, preserves the user's original wording and language, and carries working-tree state, remaining work, validation, and the next action only in the fresh-task starter prompt.
 - Handoff continuations use the saved project checkout by default so path-bound setup and startup scripts keep running in the original workspace. A managed worktree is used only when the user explicitly requests isolation.
 - `spec-update`: an in-place Skill that extracts specification-owned detail from applicable `AGENTS.md` files and updates the current specification without creating a new task. A single update reconciles active requirements, newly evidenced prohibited approaches, verified implemented specifications, and deliberately superseded specifications.
-- Lifecycle hooks for `SessionStart`, `PostCompact`, and `UserPromptSubmit`.
-- A dependency-free Node.js monitor that reads only a bounded transcript tail, even when the JSONL is many gigabytes.
+- No registered automatic hooks. The old health script is a silent compatibility entrypoint for stale hook definitions.
 
 ## Install from this repository
 
@@ -48,13 +41,13 @@ The equivalent Codex command is:
 codex plugin marketplace add https://github.com/adoin/ChatGPT-gloves
 ```
 
-Open `/plugins`, select the `chatgpt-gloves` marketplace, and install `conversation-lifeboat` or `local-ssh-deploy`. Review and trust bundled hook definitions when Codex prompts you; installing a plugin does not silently trust executable hooks.
+Open `/plugins`, select the `chatgpt-gloves` marketplace, and install `conversation-lifeboat` or `local-ssh-deploy`. Conversation Lifeboat has no executable hooks to trust. Other plugins retain their own normal hook review flow.
 
-Node.js must be available on `PATH` for the hook process. No npm dependencies are required.
+Conversation Lifeboat consists of manual skills and requires no background service or npm dependencies.
 
 ## Invoke specification workflows directly
 
-You do not need to wait for a conversation-health warning.
+These workflows run only when you request them; there are no automatic health warnings.
 
 ```text
 $spec-update Refresh the current specification without creating a new task.
