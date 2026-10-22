@@ -20,32 +20,40 @@ Hashing, JSON transformation and image storage run in one worker thread with an 
 
 ## Install, upgrade and roll back
 
-Install from the ChatGPT Gloves GitHub marketplace, then in the plugin root:
+Install the standalone CLI from npm (Node 22+). It works in PowerShell without Codex running:
 
-```text
-npm ci --ignore-scripts --no-audit --no-fund
-node scripts/guard.cjs enable
-node scripts/guard.cjs status
+```powershell
+npm install -g image-history-guard
+image-history-guard enable
+image-history-guard status
+image-history-guard stop
+image-history-guard start
+image-history-guard restart
+image-history-guard upgrade
 ```
 
-For an existing installation after updating the marketplace plugin:
+Alternatively use `npx --yes image-history-guard@latest <command>`. The npx `--yes` authorizes fetching the package; the CLI's separate `--yes` explicitly authorizes service interruption. Without the latter, stop/restart/upgrade ask for confirmation in a terminal and refuse noninteractive execution. Cancellation preserves service selection and routing. `upgrade` prepares the latest npm release before confirmation; `upgrade --local` selects the executing CLI's bundled version. `restart` uses the already-selected version. `status` distinguishes CLI, selected and running versions; it does not check the registry.
+
+The marketplace plugin contains the same controller, skill and optional reviewed hook. To use that bundled controller directly:
 
 ```text
 npm ci --ignore-scripts --no-audit --no-fund
 node scripts/guard.cjs upgrade
 ```
 
-Restart Codex after enable/upgrade. Upgrade starts a fresh runtime on a new port and temporarily keeps the previous listener alive. On the next startup check, once the current service is healthy, previous listeners stop accepting connections and drain active HTTP/WebSocket connections before exiting. Legacy versions without graceful retirement support are shut down; their clients must restart. Subsequent checks prune exited process records. SessionStart also runs for new/resumed chats, so it is not proof that every old client has restarted. The config change is reversible and preserves unrelated edits. Existing custom provider routes are refused.
+Version 0.3 uses one shared operation lock and one service lifetime lock per Codex home. Confirmed replacement stops current and legacy listeners through authenticated endpoints, waits for their processes to exit, then starts the new runtime at the same port and capability URL. No managed old/new service overlap is introduced. If shutdown cannot be confirmed, replacement is refused. Saved PIDs are never killed. A failed replacement attempts rollback; a persisted transaction allows recovery after an interrupted operation. An unresolved recovery blocks another start. The local files are not a security boundary against the same user manually editing state or launching historical controllers.
 
-Review the bundled startup hook using Codex's normal trust flow. It only restarts an explicitly enabled installation. No OS service or certificate is installed. Without the trusted hook, run `node scripts/guard.cjs start` after reboot. HTTP_PROXY/HTTPS_PROXY/NO_PROXY are respected; system proxy configuration is not auto-detected. The proxy must be running while its route is configured.
+Restart Codex after first enable. Upgrades preserve the current endpoint; in-flight requests/WebSockets may reconnect. Clients caching a different historical endpoint from pre-0.3 upgrades still need a restart. Updating marketplace or global npm files alone does not replace an immutable running runtime: use `upgrade`. No background update polling is performed. Existing custom provider routes are refused.
+
+Review the bundled startup hook using Codex's normal trust flow. It only restores an enabled, selected runtime; it never upgrades, installs, asks questions or overrides manual stop. `stop` leaves routing in place and records manual stop; use `start` before further model requests. Legacy listener records require a confirmed upgrade. No OS service or certificate is installed. Without the trusted hook, run `image-history-guard start` after reboot. HTTP_PROXY/HTTPS_PROXY/NO_PROXY are respected; system proxy configuration is not auto-detected. The proxy remains a background process when Codex exits.
 
 Rollback:
 
 ```text
-node scripts/guard.cjs disable
+image-history-guard disable
 ```
 
-Restart Codex. When no old clients need either listener, optionally run `node scripts/guard.cjs stop`. Local cached image files are retained under the data directory; disabling does not erase them.
+Restart Codex, then optionally run `image-history-guard stop`. Local cached image files are retained under the data directory; disabling does not erase them. `--codex-home DIR` selects another explicitly requested home; separate homes have separate instances.
 
 ## Measurement
 

@@ -273,16 +273,60 @@ test('controller enables a copied runtime, restarts it, disables without losing 
   const stateFile = path.join(home, 'plugins/data/image-history-guard-chatgpt-gloves/installation.json');
   let state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
   const previousBase = state.baseUrl;
-  fs.writeFileSync(stateFile, JSON.stringify({ ...state, runtime: path.join(home, 'old-runtime') }));
+  fs.writeFileSync(stateFile, JSON.stringify({ ...state, retired: [{ baseUrl: state.baseUrl, pid: null }] }));
+  const beforeCancel = fs.readFileSync(stateFile, 'utf8');
+  const configBefore = fs.readFileSync(config, 'utf8');
+  assert.equal((await control('upgrade', home, { confirm: async () => false })).cancelled, true);
+  assert.equal(fs.readFileSync(stateFile, 'utf8'), beforeCancel, 'cancellation preserves the selected runtime');
+  assert.equal(fs.readFileSync(config, 'utf8'), configBefore, 'cancellation preserves routing');
   assert.equal((await control('upgrade', home)).upgraded, true);
   state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-  assert.notEqual(state.baseUrl, previousBase);
-  assert.equal((await nativeFetch(previousBase + '/_guard/status')).status, 200, 'upgrade keeps old clients connected');
-  assert.equal((await control('start', home)).retiredListeners, 1, 'startup retires the previous listener');
-  await new Promise(resolve => setTimeout(resolve, 100));
-  await assert.rejects(nativeFetch(previousBase + '/_guard/status'), 'retired listener no longer accepts clients');
-  await control('start', home);
-  assert.equal(JSON.parse(fs.readFileSync(stateFile, 'utf8')).retired.length, 0, 'dead retirement records are pruned');
+  assert.equal(state.baseUrl, previousBase, 'replacement preserves the cached client address');
+  assert.equal(fs.readFileSync(config, 'utf8'), configBefore);
+  assert.equal(state.retired.length, 0);
+  assert.equal((await control('restart', home, { confirm: async () => false })).cancelled, true);
+  const beforeRestart = state.pid;
+  assert.equal((await control('restart', home)).restarted, true);
+  state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  assert.notEqual(state.pid, beforeRestart);
+  assert.equal(state.baseUrl, previousBase);
+  assert.equal((await control('start', home)).pid, state.pid, 'start reuses the one selected runtime');
+  const duplicate = spawnSync(process.execPath, [path.join(state.runtime, 'scripts/guard.cjs'), 'serve', '--state', stateFile], {
+    encoding: 'utf8', timeout: 2500,
+  });
+  assert.notEqual(duplicate.status, 0);
+  assert.match(duplicate.stderr, /GUARD_LOCK_BUSY/, 'service lifetime lock rejects a second server');
+  const racingStarts = await Promise.allSettled([control('start', home), control('start', home)]);
+  assert.equal(racingStarts.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(racingStarts.find(result => result.status === 'rejected').reason.code, 'GUARD_LOCK_BUSY');
+  assert.equal((await control('status', home)).pid, state.pid);
+
+  // Exercise real stop/start rollback with a staged runtime that cannot boot.
+  const preparedRuntime = state.runtime;
+  const backupRuntime = path.join(home, 'previous-runtime');
+  fs.cpSync(preparedRuntime, backupRuntime, { recursive: true });
+  const preparedScript = path.join(preparedRuntime, 'scripts/guard.cjs');
+  const savedScript = fs.readFileSync(preparedScript);
+  fs.writeFileSync(preparedScript, 'process.exit(1);');
+  fs.writeFileSync(stateFile, JSON.stringify({ ...state, runtime: backupRuntime }));
+  try {
+    await assert.rejects(control('upgrade', home), { code: 'GUARD_START_FAILED' });
+    assert.equal((await control('status', home)).running, true, 'failed replacement restores the prior service');
+    state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    assert.equal(state.runtime, backupRuntime);
+    assert.equal(state.baseUrl, previousBase);
+    assert.equal(fs.existsSync(path.join(path.dirname(stateFile), 'transition.json')), false);
+  } finally { fs.writeFileSync(preparedScript, savedScript); }
+
+  const journal = path.join(path.dirname(stateFile), 'transition.json');
+  fs.writeFileSync(journal, JSON.stringify({ prior: state, wasRunning: true }));
+  assert.equal((await control('start', home)).running, true, 'interrupted transitions recover before another start');
+  assert.equal(fs.existsSync(journal), false);
+  state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  const refused = spawnSync(process.execPath, [path.join(root, 'scripts/guard.cjs'), 'stop', '--codex-home', home], { encoding: 'utf8' });
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /GUARD_CONFIRMATION_REQUIRED/);
+  assert.equal((await control('status', home)).running, true);
   await fetch(`${state.baseUrl}/_guard/shutdown`, { method: 'POST' });
   await new Promise(resolve => setTimeout(resolve, 100));
   assert.equal((await control('status', home)).running, false);
@@ -291,7 +335,14 @@ test('controller enables a copied runtime, restarts it, disables without losing 
   });
   assert.equal(hook.status, 0);
   assert.equal((await control('status', home)).running, true, 'trusted startup hook restores an enabled route');
-  await assert.rejects(control('stop', home), /Disable routing/);
+  await control('stop', home);
+  assert.equal((await control('start', home, { hook: true })).skipped, true, 'a hook does not undo explicit stop');
+  const stoppedHook = spawnSync(process.execPath, [path.join(root, 'hooks/session-start.cjs')], {
+    env: { ...process.env, CODEX_HOME: home }, encoding: 'utf8', timeout: 14000,
+  });
+  assert.equal(stoppedHook.status, 0);
+  assert.equal((await control('status', home)).running, false);
+  assert.equal((await control('start', home)).running, true);
   fs.appendFileSync(config, '[features]\napps = true\n');
   await control('disable', home);
   assert.equal(fs.readFileSync(config, 'utf8'), original + '[features]\napps = true\n');

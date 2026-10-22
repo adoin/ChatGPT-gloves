@@ -10,7 +10,7 @@ const { parse } = require('smol-toml');
 
 const BEGIN = '# BEGIN image-history-guard (managed)';
 const END = '# END image-history-guard (managed)';
-const VERSION = '0.2.3';
+const VERSION = require('../package.json').version;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function settings(home) {
@@ -52,36 +52,28 @@ async function stop(state) {
   try { await fetch(`${state.baseUrl}/_guard/shutdown`, { method: 'POST', signal: AbortSignal.timeout(2000) }); }
   catch { /* Already stopped; do not kill by potentially recycled PID. */ }
 }
-async function reapRetired(state, file) {
-  const retained = [];
-  let retiredListeners = 0;
-  for (const old of state.retired || []) {
-    if (old.baseUrl === state.baseUrl) continue;
-    const info = await health(old);
-    if (info) {
-      try {
-        // Legacy runtimes have no graceful retirement endpoint. The user's
-        // startup cleanup policy permits retiring these via authenticated stop.
-        if (!info.retirementSupported) await stop(old);
-        else {
-          const response = await fetch(`${old.baseUrl}/_guard/retire`, { method: 'POST', signal: AbortSignal.timeout(2000) });
-          if (!response.ok) { retained.push(old); continue; }
-        }
-        retiredListeners++;
-      } catch { retained.push(old); continue; }
-    }
-    // A retired listener can still be draining active WebSockets. Keep its
-    // record until the process exits; never kill a potentially recycled PID.
-    if (Number.isSafeInteger(old.pid) && old.pid > 0) {
-      try { process.kill(old.pid, 0); retained.push(old); } catch (error) {
-        if (error.code !== 'ESRCH') retained.push(old);
-      }
-    }
+function alive(pid) {
+  if (!Number.isSafeInteger(pid) || pid < 1) return false;
+  try { process.kill(pid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; }
+}
+function failure(code) { return Object.assign(new Error(code), { code }); }
+async function stopAndWait(state) {
+  const info = await health(state);
+  const pid = info?.pid || state.pid;
+  if (info) await stop(state);
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (!alive(pid) && !await health(state)) return;
+    await sleep(100);
   }
-  save(file, { ...state, retired: retained });
-  return { retiredListeners, retainedProcesses: retained.length };
+  // A saved PID is only a reason to refuse replacement, never authority to kill.
+  throw failure('GUARD_STOP_TIMEOUT');
+}
+async function stopAll(state) {
+  for (const old of state.retired || []) if (old.baseUrl !== state.baseUrl) await stopAndWait(old);
+  await stopAndWait(state);
 }
 async function serve(file) {
+  return withLock({ data: path.join(path.dirname(file), 'service') }, async () => {
   const state = readState(file);
   const { createProxy } = require('../lib/proxy.cjs');
   const { diagnosticWriter } = require('../lib/diagnostics.cjs');
@@ -96,6 +88,9 @@ async function serve(file) {
   const close = () => server.guardClose();
   process.on('SIGINT', close);
   process.on('SIGTERM', close);
+  await new Promise(resolve => server.once('close', resolve));
+  await server.guardClose();
+  });
 }
 async function launch(file, runtime) {
   const child = spawn(process.execPath, [path.join(runtime, 'scripts', 'guard.cjs'), 'serve', '--state', file], {
@@ -109,31 +104,36 @@ async function launch(file, runtime) {
     await sleep(100);
     const state = readState(file);
     const info = state.baseUrl ? await health(state) : null;
-    if (info && info.workerFiltering !== false) return state;
+    if (info && info.pid === child.pid && info.workerFiltering !== false) return state;
+    if (child.exitCode !== null) throw failure('GUARD_START_FAILED');
   }
   throw new Error('Proxy did not become ready.');
 }
 function prepareRuntime(data) {
   const root = path.resolve(__dirname, '..');
   const digest = crypto.createHash('sha256');
-  const files = ['package.json', 'package-lock.json', 'lib/filter.cjs', 'lib/proxy.cjs', 'lib/identity.cjs',
+  const files = ['package.json', 'npm-shrinkwrap.json', 'lib/filter.cjs', 'lib/proxy.cjs', 'lib/identity.cjs',
     'lib/image-store.cjs', 'lib/engine.cjs', 'lib/filter-worker.cjs', 'lib/diagnostics.cjs', 'scripts/guard.cjs'];
   for (const file of files) digest.update(fs.readFileSync(path.join(root, file)));
   const runtime = path.join(data, 'runtime', digest.digest('hex').slice(0, 16));
+  if (fs.existsSync(path.join(runtime, '.ready'))) return runtime;
   for (const file of files) {
     fs.mkdirSync(path.dirname(path.join(runtime, file)), { recursive: true });
     fs.copyFileSync(path.join(root, file), path.join(runtime, file));
   }
   // npm.cmd cannot be execFile'd on Windows without a shell. Use the npm CLI
   // with Node instead, avoiding shell interpolation of paths or environment data.
-  const npmCandidates = [process.env.npm_execpath, path.join(path.dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')];
-  if (process.platform === 'win32') npmCandidates.push(path.join(process.env.APPDATA || '', 'npm/node_modules/npm/bin/npm-cli.js'));
-  const npm = npmCandidates.find(file => file && fs.existsSync(file));
-  const result = npm
-    ? spawnSync(process.execPath, [npm, 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: runtime, windowsHide: true, encoding: 'utf8' })
-    : spawnSync('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: runtime, windowsHide: true, encoding: 'utf8' });
+  const [executable, prefix] = npmCommand();
+  const result = spawnSync(executable, [...prefix, 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: runtime, windowsHide: true, encoding: 'utf8' });
   if (result.status !== 0) throw new Error('Runtime dependency installation failed. Run npm ci in the plugin directory and ensure npm is available.');
+  fs.writeFileSync(path.join(runtime, '.ready'), VERSION);
   return runtime;
+}
+function npmCommand() {
+  const candidates = [process.env.npm_execpath, path.join(path.dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')];
+  if (process.platform === 'win32') candidates.push(path.join(process.env.APPDATA || '', 'npm/node_modules/npm/bin/npm-cli.js'));
+  const npm = candidates.find(file => file && fs.existsSync(file));
+  return npm ? [process.execPath, [npm]] : ['npm', []];
 }
 
 async function withLock(paths, action) {
@@ -170,41 +170,54 @@ async function withLock(paths, action) {
   }
 }
 
-async function control(command, home) {
+async function control(command, home, { confirm = async () => true, hook = false } = {}) {
   const paths = settings(home);
   if (command === 'status') {
     if (!fs.existsSync(paths.state)) return { installed: false, running: false };
     const state = readState(paths.state);
     const info = await health(state);
     const config = parse(fs.readFileSync(paths.config, 'utf8'));
-    return { installed: true, enabled: config.openai_base_url === state.baseUrl, running: Boolean(info), ...info };
+    return { installed: true, cliVersion: VERSION, installedVersion: state.version,
+      manuallyStopped: Boolean(state.manuallyStopped), retiredRecords: (state.retired || []).length,
+      transitionPending: fs.existsSync(path.join(paths.data, 'transition.json')),
+      enabled: config.openai_base_url === state.baseUrl, running: Boolean(info), ...info };
   }
   return withLock(paths, async () => {
-    if (command === 'upgrade') {
+    const journal = path.join(paths.data, 'transition.json');
+    // An interrupted replacement always recovers its saved version first.
+    // A failed recovery keeps the journal for the next explicit repair attempt.
+    if (fs.existsSync(journal)) {
+      const transaction = readState(journal);
+      await stopAll(readState(paths.state));
+      save(paths.state, transaction.prior);
+      if (transaction.wasRunning) await launch(paths.state, transaction.prior.runtime);
+      fs.unlinkSync(journal);
+    }
+    if (command === 'upgrade' || command === 'restart') {
       const prior = readState(paths.state);
       const original = fs.readFileSync(paths.config, 'utf8');
-      const withoutRoute = detachConfig(original, prior.baseUrl);
-      const runtime = prepareRuntime(paths.data);
+      const config = parse(original);
+      if (config.openai_base_url === prior.baseUrl) detachConfig(original, prior.baseUrl);
+      else if (config.openai_base_url) throw failure('GUARD_ROUTING_CONFLICT');
+      const runtime = command === 'upgrade' ? prepareRuntime(paths.data) : prior.runtime;
       const running = await health(prior);
-      if (prior.runtime === runtime && running?.version === VERSION && running.workerFiltering) return { upgraded: false, running: true, version: VERSION };
-      const staged = path.join(paths.data, `installation-${crypto.randomBytes(8).toString('hex')}.json`);
-      let next;
+      if (command === 'upgrade' && prior.runtime === runtime && running?.version === VERSION && running.workerFiltering && !(prior.retired || []).length)
+        return { upgraded: false, running: true, version: VERSION };
+      if (!await confirm(command)) return { cancelled: true, running: Boolean(running), version: running?.version || prior.version };
+      if (fs.readFileSync(paths.config, 'utf8') !== original) throw failure('GUARD_CONFIG_CHANGED');
+      save(journal, { prior, wasRunning: Boolean(running) });
       try {
-        save(staged, { upstream: prior.upstream, runtime, capability: crypto.randomBytes(24).toString('hex') });
-        next = await launch(staged, runtime);
-        if (fs.readFileSync(paths.config, 'utf8') !== original) throw new Error('Configuration changed concurrently.');
-        fs.writeFileSync(path.join(paths.data, `config-before-upgrade-${Date.now()}.toml`), original, { mode: 0o600, flag: 'wx' });
-        atomic(paths.config, attachConfig(withoutRoute, next.baseUrl));
-        save(paths.state, { ...next, retired: [...(prior.retired || []), { baseUrl: prior.baseUrl, runtime: prior.runtime, pid: prior.pid }] });
-        try { fs.unlinkSync(staged); } catch { /* promotion is already committed */ }
-        // Old app processes may still use the previous route; keep that listener
-        // alive. New app processes use the new runtime after restart.
-        return { upgraded: true, enabled: true, running: true, version: VERSION, restartCodex: true, previousListenerRetained: true };
+        await stopAll(prior);
+        save(paths.state, { ...prior, runtime, pid: null, retired: [], manuallyStopped: false });
+        const next = await launch(paths.state, runtime);
+        fs.unlinkSync(journal);
+        return { [command === 'upgrade' ? 'upgraded' : 'restarted']: true, running: true,
+          version: next.version, addressPreserved: next.baseUrl === prior.baseUrl, retiredRecords: 0 };
       } catch (error) {
-        if (next) await stop(next);
-        // Restore only our own route if a promotion failed; preserve user edits.
-        if (next && fs.readFileSync(paths.config, 'utf8') === attachConfig(withoutRoute, next.baseUrl)) atomic(paths.config, original);
-        try { fs.unlinkSync(staged); } catch { /* no staged runtime */ }
+        await stopAll(readState(paths.state));
+        save(paths.state, prior);
+        if (running) await launch(paths.state, prior.runtime);
+        fs.unlinkSync(journal);
         throw error;
       }
     }
@@ -220,39 +233,55 @@ async function control(command, home) {
     }
     if (command === 'stop') {
       const state = readState(paths.state);
-      const config = parse(fs.readFileSync(paths.config, 'utf8'));
-      if (config.openai_base_url === state.baseUrl) throw new Error('Disable routing and restart Codex before stopping the proxy.');
-      await stop(state);
-      for (const retired of state.retired || []) await stop(retired);
+      if (!await confirm(command)) return { cancelled: true };
+      save(paths.state, { ...state, manuallyStopped: true });
+      await stopAll(state);
+      save(paths.state, { ...state, pid: null, retired: [], manuallyStopped: true });
       return { stopped: true };
     }
     if (command === 'start') {
       const state = readState(paths.state);
-      const running = await health(state) || await health(await launch(paths.state, state.runtime));
-      const cleanup = running ? await reapRetired(readState(paths.state), paths.state) : {};
-      return { running: Boolean(running), ...running, ...cleanup };
+      const config = parse(fs.readFileSync(paths.config, 'utf8'));
+      if (hook && (state.manuallyStopped || config.openai_base_url !== state.baseUrl))
+        return { skipped: true, manuallyStopped: Boolean(state.manuallyStopped) };
+      if ((state.retired || []).length) throw failure('GUARD_UPGRADE_REQUIRED');
+      if (state.manuallyStopped) save(paths.state, { ...state, manuallyStopped: false });
+      let running = await health(state);
+      if (!running) {
+        if (alive(state.pid)) throw failure('GUARD_EXISTING_PROCESS_UNHEALTHY');
+        running = await health(await launch(paths.state, state.runtime));
+      }
+      return { running: Boolean(running), cliVersion: VERSION, ...running };
     }
-    if (command !== 'enable') throw new Error('Expected enable, upgrade, disable, start, stop, or status.');
+    if (command !== 'enable') throw failure('GUARD_UNKNOWN_COMMAND');
     if (fs.existsSync(paths.state)) {
       const state = readState(paths.state);
       const config = parse(fs.readFileSync(paths.config, 'utf8'));
       if (config.openai_base_url === state.baseUrl) {
-        if (!await health(state)) await launch(paths.state, state.runtime);
+        if ((state.retired || []).length) throw failure('GUARD_UPGRADE_REQUIRED');
+        if (state.manuallyStopped) save(paths.state, { ...state, manuallyStopped: false });
+        if (!await health(state)) {
+          if (alive(state.pid)) throw failure('GUARD_EXISTING_PROCESS_UNHEALTHY');
+          save(paths.state, { ...state, manuallyStopped: false });
+          await launch(paths.state, state.runtime);
+        }
         return { enabled: true, running: true, restartCodex: true };
       }
     }
     const original = fs.existsSync(paths.config) ? fs.readFileSync(paths.config, 'utf8') : '';
     attachConfig(original, 'http://127.0.0.1:1'); // Validate before starting anything.
     if (process.env.OPENAI_BASE_URL || process.env.CODEX_API_ENDPOINT) throw new Error('Environment routing override found; resolve it before enabling.');
-    const runtime = prepareRuntime(paths.data);
     const previousState = fs.existsSync(paths.state) ? fs.readFileSync(paths.state) : null;
     // Keep the same listener across disable/re-enable; do not strand a running
     // Codex process that still uses the prior endpoint.
     let state = previousState ? JSON.parse(previousState) : null;
+    if ((state?.retired || []).length) throw failure('GUARD_UPGRADE_REQUIRED');
     if (!state || !await health(state)) {
-      state = { upstream: 'https://chatgpt.com/backend-api/codex', capability: crypto.randomBytes(24).toString('hex'), runtime };
+      if (state && alive(state.pid)) throw failure('GUARD_EXISTING_PROCESS_UNHEALTHY');
+      state = state ? { ...state, manuallyStopped: false } : {
+        upstream: 'https://chatgpt.com/backend-api/codex', capability: crypto.randomBytes(24).toString('hex'), runtime: prepareRuntime(paths.data) };
       save(paths.state, state);
-      state = await launch(paths.state, runtime);
+      state = await launch(paths.state, state.runtime);
     }
     const updated = attachConfig(original, state.baseUrl);
     try {
@@ -270,15 +299,61 @@ async function control(command, home) {
 
 async function main() {
   const [command, ...args] = process.argv.slice(2);
+  if (!command || ['help', '--help', '-h'].includes(command)) {
+    console.log(`Image History Guard ${VERSION}
+Usage: image-history-guard <command> [--codex-home DIR] [--yes]
+  enable    Enable Codex routing and start an isolated local service
+  status    Report CLI, installed and running versions (JSON)
+  start     Start/reuse the selected runtime; no implicit upgrade
+  stop      Stop the service; startup hooks respect this until start
+  restart   Confirm, stop completely, restart the selected version
+  upgrade   Prepare the latest npm release, confirm, replace the service
+  disable   Remove managed routing; restart Codex to use its default route
+Options: --yes (authorize interruption); --local (upgrade to this CLI version)
+Use npm install -g image-history-guard, or npx image-history-guard@latest.
+Active requests can be interrupted by stop/restart/upgrade.`);
+    return;
+  }
+  if (command === '--version' || command === '-v') { console.log(VERSION); return; }
+  if (!['enable', 'status', 'start', 'stop', 'restart', 'upgrade', 'disable', 'serve'].includes(command))
+    throw failure('GUARD_UNKNOWN_COMMAND');
+  for (let index = 0; index < args.length; index++) {
+    if (['--codex-home', '--state'].includes(args[index])) {
+      if (!args[++index] || args[index].startsWith('--')) throw failure('GUARD_INVALID_ARGUMENT');
+    } else if (!['--yes', '--local', '--hook'].includes(args[index])) throw failure('GUARD_INVALID_ARGUMENT');
+  }
   const option = name => { const index = args.indexOf(name); return index < 0 ? null : args[index + 1]; };
   if (command === 'serve') return serve(option('--state'));
+  if (command === 'upgrade' && !args.includes('--local')) {
+    const [executable, prefix] = npmCommand();
+    const child = spawn(executable, [...prefix, 'exec', '--yes', '--ignore-scripts', '--package=image-history-guard@latest', '--',
+      'image-history-guard', 'upgrade', '--local', ...args], { stdio: 'inherit', windowsHide: true });
+    const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve); });
+    process.exitCode = code ?? 1;
+    return;
+  }
   const home = path.resolve(option('--codex-home') || process.env.CODEX_HOME || path.join(os.homedir(), '.codex'));
-  console.log(JSON.stringify(await control(command, home)));
+  const confirm = async action => {
+    if (args.includes('--yes')) return true;
+    if (!process.stdin.isTTY || !process.stdout.isTTY) throw failure('GUARD_CONFIRMATION_REQUIRED');
+    const readline = require('node:readline/promises').createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      const answer = await readline.question(`${action}: stop existing services and interrupt active requests? [y/N] `);
+      return /^(y|yes)$/i.test(answer.trim());
+    } finally { readline.close(); }
+  };
+  console.log(JSON.stringify(await control(command, home, { confirm, hook: args.includes('--hook') })));
 }
 if (require.main === module) main().catch(error => {
   // Errors can include request headers/URLs in dependency messages. Do not dump them.
   const code = /^GUARD_[A-Z_]+$/.test(error.code || '') ? ` (${error.code})` : '';
-  process.stderr.write(`Image History Guard operation failed${code}. Check routing conflicts, npm availability, and proxy status; configuration was not forcibly overwritten.\n`);
+  const advice = {
+    GUARD_CONFIRMATION_REQUIRED: 'Run in an interactive PowerShell terminal, or pass --yes to authorize interruption.',
+    GUARD_UPGRADE_REQUIRED: 'Legacy listener records exist. Run image-history-guard upgrade to migrate them with confirmation.',
+    GUARD_STOP_TIMEOUT: 'A previous process has not exited. Replacement was refused; inspect status before retrying.',
+    GUARD_EXISTING_PROCESS_UNHEALTHY: 'The existing process is not healthy. Run restart to replace it with confirmation.',
+  };
+  process.stderr.write(`Image History Guard operation failed${code}. ${advice[error.code] || 'Check routing conflicts, npm availability, and proxy status; configuration was not forcibly overwritten.'}\n`);
   process.exitCode = 1;
 });
 module.exports = { attachConfig, detachConfig, control };

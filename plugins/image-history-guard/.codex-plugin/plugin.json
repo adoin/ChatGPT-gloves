@@ -1,6 +1,6 @@
 {
   "name": "image-history-guard",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Stable per-conversation image references with confirmed response lineage, local recovery and reversible proxy routing.",
   "author": {
     "name": "adoin",

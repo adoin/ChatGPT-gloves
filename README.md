@@ -71,7 +71,7 @@ In ChatGPT, type `@` and select **Specification Update** or **Conversation Hando
 
 ## Distribution policy
 
-The GitHub-backed Codex marketplace is the only supported installation and update channel. The previously published `chatgpt-gloves` npm package is a frozen legacy snapshot and will not receive plugin updates.
+Codex plugins are distributed through the GitHub-backed marketplace. Image History Guard additionally provides the standalone `image-history-guard` npm CLI for service management from PowerShell or another terminal; see its [guide](plugins/image-history-guard/README.md). The previously published `chatgpt-gloves` npm package is a frozen legacy snapshot and will not receive plugin updates.
 
 ## Configuration
 

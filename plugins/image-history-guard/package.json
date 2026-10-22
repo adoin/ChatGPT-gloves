@@ -1,7 +1,11 @@
 {
-  "name": "codex-image-history-guard",
-  "version": "0.2.3",
-  "private": true,
+  "name": "image-history-guard",
+  "version": "0.3.0",
+  "bin": { "image-history-guard": "scripts/guard.cjs" },
+  "files": ["scripts/guard.cjs", "lib/", "npm-shrinkwrap.json", "README.md", "LICENSE"],
+  "author": "adoin",
+  "repository": { "type": "git", "url": "git+https://github.com/adoin/ChatGPT-gloves.git", "directory": "plugins/image-history-guard" },
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
   "description": "Local, reversible image deduplication proxy for Codex Responses requests.",
   "license": "MIT",
   "engines": {

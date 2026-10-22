@@ -15,7 +15,7 @@ function verify() {
   const pluginRequirements = [
     {
       name: "image-history-guard",
-      files: ["package.json", "package-lock.json", "lib/filter.cjs", "lib/proxy.cjs", "lib/identity.cjs", "lib/image-store.cjs", "lib/engine.cjs", "lib/filter-worker.cjs", "lib/diagnostics.cjs", "scripts/guard.cjs", "hooks/hooks.json", "hooks/session-start.cjs", "skills/image-history-guard/SKILL.md"]
+      files: ["package.json", "npm-shrinkwrap.json", "lib/filter.cjs", "lib/proxy.cjs", "lib/identity.cjs", "lib/image-store.cjs", "lib/engine.cjs", "lib/filter-worker.cjs", "lib/diagnostics.cjs", "scripts/guard.cjs", "hooks/hooks.json", "hooks/session-start.cjs", "skills/image-history-guard/SKILL.md"]
     },
     {
       name: "conversation-lifeboat",

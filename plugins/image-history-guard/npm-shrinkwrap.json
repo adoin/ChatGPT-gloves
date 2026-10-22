@@ -1,18 +1,21 @@
 {
-  "name": "codex-image-history-guard",
-  "version": "0.2.3",
+  "name": "image-history-guard",
+  "version": "0.3.0",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
-      "name": "codex-image-history-guard",
-      "version": "0.2.3",
+      "name": "image-history-guard",
+      "version": "0.3.0",
       "license": "MIT",
       "dependencies": {
         "https-proxy-agent": "^7.0.6",
         "proxy-from-env": "^1.1.0",
         "smol-toml": "^1.4.2",
         "ws": "^8.18.3"
+      },
+      "bin": {
+        "image-history-guard": "scripts/guard.cjs"
       },
       "engines": {
         "node": ">=22"

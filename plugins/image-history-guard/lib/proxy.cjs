@@ -13,7 +13,7 @@ const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 const { FilterEngine, EventObserver } = require('./engine.cjs');
 const { identityHeaders } = require('./identity.cjs');
-const VERSION = '0.2.3';
+const VERSION = require('../package.json').version;
 
 const MAX_BYTES = 128 * 1024 * 1024;
 const HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
