@@ -18,16 +18,23 @@ class ImageStore {
     for (const scope of fs.readdirSync(this.root)) {
       if (!/^[a-f0-9]{64}$/.test(scope)) continue;
       const directory = path.join(this.root, scope);
-      if (fs.lstatSync(directory).isSymbolicLink() || !fs.statSync(directory).isDirectory()) continue;
-      for (const name of fs.readdirSync(directory)) {
+      let names;
+      try {
+        if (fs.lstatSync(directory).isSymbolicLink() || !fs.statSync(directory).isDirectory()) continue;
+        names = fs.readdirSync(directory);
+      } catch { continue; } // Another runtime can evict an old directory.
+      for (const name of names) {
         if (!/^IMG-[a-f0-9]{64}\.(png|jpeg|webp|gif)$/.test(name)) continue;
         const file = path.join(directory, name);
-        if (fs.lstatSync(file).isSymbolicLink()) continue;
-        const stat = fs.statSync(file);
+        let stat;
+        try {
+          if (fs.lstatSync(file).isSymbolicLink()) continue;
+          stat = fs.statSync(file);
+        } catch { continue; }
         if (stat.size > this.limits.maxImageBytes) continue;
-        const checksum = createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-        if (!name.startsWith(`IMG-${checksum}.`)) continue;
-        this.entries.set(file, { bytes: stat.size, at: stat.mtimeMs, modified: stat.mtimeMs });
+        // Validate content on first use, not by reading every cached image before
+        // accepting the first request. Metadata alone never authorizes a reference.
+        this.entries.set(file, { bytes: stat.size, at: stat.mtimeMs, modified: null });
       }
     }
     this.prune();

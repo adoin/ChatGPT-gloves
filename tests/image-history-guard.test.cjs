@@ -88,14 +88,15 @@ test('restricted local routing, origin rejection, size bounds and upstream error
   const { base } = await setup(t, (_req, res) => { calls++; res.writeHead(429, { 'retry-after': '3' }).end('rate-limited'); }, { maxBytes: 1024 });
   assert.equal((await fetch(`${base}/responses`, { headers: { origin: 'https://example.com' } })).status, 404);
   assert.equal((await fetch(`${base}/../../evil`)).status, 404);
-  assert.equal((await fetch(`${base}/arbitrary`)).status, 404);
   assert.equal((await fetch(base.replace(capability, 'b'.repeat(48)) + '/responses')).status, 404);
   assert.equal(calls, 0);
   const error = await fetch(`${base}/models`);
   assert.equal(error.status, 429); assert.equal(error.headers.get('retry-after'), '3');
   assert.equal(await error.text(), 'rate-limited');
-  const oversized = await fetch(`${base}/responses`, { method: 'POST', body: 'x'.repeat(1025) });
-  assert.equal(oversized.status, 413); assert.equal(calls, 1);
+  const opaque = await fetch(`${base}/arbitrary`);
+  assert.equal(opaque.status, 429); assert.equal(await opaque.text(), 'rate-limited');
+  const oversized = await fetch(`${base}/responses`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: 'x'.repeat(1025) });
+  assert.equal(oversized.status, 413); assert.equal(calls, 2);
 });
 
 test('HTTP completion enables a later reference, while failures and unknown lineage retain originals', async t => {
@@ -130,6 +131,48 @@ test('compaction input and unidentified requests remain byte-identical', async t
   await (await fetch(`${base}/responses/compact`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: raw })).text();
   await (await nativeFetch(`${base}/responses`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: raw })).text();
   assert.equal(requests[0].toString(), raw); assert.equal(requests[1].toString(), raw);
+});
+
+test('native image, web, multipart and unknown APIs stream unchanged to the fixed upstream', async t => {
+  const records = [];
+  const { base } = await setup(t, async (req, res) => {
+    records.push({ method: req.method, path: req.url, headers: req.headers, body: await body(req) });
+    res.writeHead(201, { 'content-type': 'application/octet-stream', 'x-upstream': 'retained' }).end('opaque-result');
+  }, { maxBytes: 1024 });
+  const payload = Buffer.from(' \n' + JSON.stringify({ input: [message(image(), image())] }) + '\n');
+  for (const [route, method, data, type, encoding] of [
+    ['/images/generations', 'POST', payload, 'application/json'],
+    ['/images/edits', 'POST', Buffer.from('--boundary\r\nraw-image\r\n--boundary--'), 'multipart/form-data; boundary=boundary'],
+    ['/web/search?query=test', 'POST', zlib.gzipSync(payload), 'application/json', 'gzip'],
+    ['/future/native/tool', 'PATCH', payload, 'application/json'],
+    ['/future/responses', 'PUT', payload, 'application/json'],
+    ['/future/responses', 'POST', payload, 'application/json'],
+  ]) {
+    const response = await fetch(base + route, { method, headers: { 'content-type': type, ...(encoding ? { 'content-encoding': encoding } : {}) }, body: data });
+    assert.equal(response.status, 201); assert.equal(response.headers.get('x-upstream'), 'retained');
+    assert.equal(await response.text(), 'opaque-result');
+    const recorded = records.at(-1);
+    assert.equal(recorded.path, '/backend-api/codex' + route);
+    assert.equal(recorded.method, method);
+    assert.equal(recorded.headers['content-type'], type);
+    assert.equal(recorded.headers['content-encoding'], encoding);
+    assert.equal(Buffer.compare(recorded.body, data), 0, 'opaque request bytes must be unchanged');
+  }
+  assert.equal((await (await fetch(base + '/_guard/status')).json()).passthroughRequests, 6);
+});
+
+test('non-Responses WebSocket traffic is forwarded without inspecting its JSON', async t => {
+  const { upstream, base } = await setup(t, (_req, res) => res.end('{}'));
+  const wss = new WebSocketServer({ server: upstream });
+  t.after(() => { for (const client of wss.clients) client.terminate(); wss.close(); });
+  wss.on('connection', socket => socket.on('message', (data, binary) => socket.send(data, { binary })));
+  const ws = new WebSocket(base.replace('http:', 'ws:') + '/future/tool', {
+    headers: { authorization: 'Bearer test', 'x-client-request-id': THREAD },
+  });
+  t.after(() => ws.terminate()); await once(ws, 'open');
+  const raw = ' \n' + JSON.stringify({ type: 'response.create', client_metadata: { thread_id: THREAD }, input: [message(image(), image())] });
+  ws.send(raw); const [data] = await once(ws, 'message');
+  assert.equal(data.toString(), raw);
 });
 
 test('WebSocket filters images and preserves incremental lineage, binary, output and close semantics', async t => {

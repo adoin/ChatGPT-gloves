@@ -17,7 +17,7 @@ Original transcripts and model responses are never rewritten. Decoded image copi
 
 ## Operations
 
-- `node <script> status` reports running/enabled version, counts, bytes and token/cache usage observed from successful responses. Do not dump config, state, request bodies, auth headers, capability URLs, image hashes or image paths into chat.
+- `node <script> status` reports running/enabled version, worker readiness/state, restart count, last worker error code, counts, bytes and token/cache usage observed from successful responses. A running listener with workerFiltering=false is not a functioning image filter. Do not dump config, state, request bodies, auth headers, capability URLs, image hashes or image paths into chat.
 - On an explicit enable/install request, run `node <script> enable`. It backs up config, starts a loopback proxy and adds a marked built-in OpenAI provider base URL. It refuses existing provider overrides; do not bypass that refusal or switch authentication.
 - On an explicit update request, install the marketplace release, install its locked dependencies, then run `node <script> upgrade`. The new runtime starts on a new port and config is switched transactionally. The prior listener remains for already-running clients. Restart Codex to use the new route; do not terminate old clients or their listener automatically.
 - The reviewed SessionStart hook restores only an already-enabled installation. It never enables routing, installs dependencies or grants trust. Without a trusted hook, run `node <script> start` before Codex after a reboot.
@@ -25,3 +25,9 @@ Original transcripts and model responses are never rewritten. Decoded image copi
 - `--codex-home <absolute-directory>` selects another home only when requested. Default is CODEX_HOME, then ~/.codex.
 
 Require a running status before claiming activation. Compare input/cached token usage across multiple turns before claiming cost or quota savings; reduced upload bytes alone proves neither. A local mock test is not a live inference test. Never install a certificate authority, read auth.json, modify original transcripts or silently trust hooks to operate this plugin.
+
+## Native tool failures
+
+Only exact Responses image inputs are candidates for rewriting; native image generation/editing, web tools, unknown routes and other HTTP methods stream to the same fixed upstream unchanged. A tool 404 is not evidence that an API key is missing. Check route compatibility and worker status before proposing an API/CLI fallback. Do not claim cloud image generation was verified from a mock routing test.
+
+Worker failures and timeouts have bounded automatic recovery and privacy-filtered lifecycle logs under the data diagnostics directory. During recovery the proxy passes originals through. Read only fixed diagnostic metadata; never print capability URLs or exception/request contents. A client that already cached the old base URL continues using its old listener until restarted; upgrading config alone does not prove that client's native tool calls use the new route.

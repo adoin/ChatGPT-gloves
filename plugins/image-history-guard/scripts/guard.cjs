@@ -10,7 +10,7 @@ const { parse } = require('smol-toml');
 
 const BEGIN = '# BEGIN image-history-guard (managed)';
 const END = '# END image-history-guard (managed)';
-const VERSION = '0.2.0';
+const VERSION = '0.2.1';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function settings(home) {
@@ -55,8 +55,10 @@ async function stop(state) {
 async function serve(file) {
   const state = readState(file);
   const { createProxy } = require('../lib/proxy.cjs');
+  const { diagnosticWriter } = require('../lib/diagnostics.cjs');
   const server = createProxy({ upstream: state.upstream, capability: state.capability,
-    imageRoot: path.join(path.dirname(file), 'images') });
+    imageRoot: path.join(path.dirname(file), 'images'),
+    onDiagnostic: diagnosticWriter(path.join(path.dirname(file), 'diagnostics')) });
   const port = state.port || 0;
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
   const actualPort = server.address().port;
@@ -77,7 +79,8 @@ async function launch(file, runtime) {
     if (error) throw new Error('Proxy process could not start.');
     await sleep(100);
     const state = readState(file);
-    if (state.baseUrl && await health(state)) return state;
+    const info = state.baseUrl ? await health(state) : null;
+    if (info && info.workerFiltering !== false) return state;
   }
   throw new Error('Proxy did not become ready.');
 }
@@ -85,7 +88,7 @@ function prepareRuntime(data) {
   const root = path.resolve(__dirname, '..');
   const digest = crypto.createHash('sha256');
   const files = ['package.json', 'package-lock.json', 'lib/filter.cjs', 'lib/proxy.cjs', 'lib/identity.cjs',
-    'lib/image-store.cjs', 'lib/engine.cjs', 'lib/filter-worker.cjs', 'scripts/guard.cjs'];
+    'lib/image-store.cjs', 'lib/engine.cjs', 'lib/filter-worker.cjs', 'lib/diagnostics.cjs', 'scripts/guard.cjs'];
   for (const file of files) digest.update(fs.readFileSync(path.join(root, file)));
   const runtime = path.join(data, 'runtime', digest.digest('hex').slice(0, 16));
   for (const file of files) {
@@ -127,7 +130,7 @@ async function control(command, home) {
       const withoutRoute = detachConfig(original, prior.baseUrl);
       const runtime = prepareRuntime(paths.data);
       const running = await health(prior);
-      if (prior.runtime === runtime && running?.version === VERSION) return { upgraded: false, running: true, version: VERSION };
+      if (prior.runtime === runtime && running?.version === VERSION && running.workerFiltering) return { upgraded: false, running: true, version: VERSION };
       const staged = path.join(paths.data, `installation-${crypto.randomBytes(8).toString('hex')}.json`);
       let next;
       try {

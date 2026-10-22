@@ -7,6 +7,7 @@ const path = require('node:path');
 const { SessionFilter } = require('../plugins/image-history-guard/lib/filter.cjs');
 const { resolveIdentity, identityHeaders } = require('../plugins/image-history-guard/lib/identity.cjs');
 const { FilterEngine, EventObserver } = require('../plugins/image-history-guard/lib/engine.cjs');
+const { diagnosticWriter } = require('../plugins/image-history-guard/lib/diagnostics.cjs');
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
 const image = (value = 'A', size = 6000) => ({ type: 'input_image', image_url: 'data:image/png;base64,' + Buffer.alloc(size, value.charCodeAt(0)).toString('base64'), detail: 'high' });
@@ -177,4 +178,56 @@ test('SSE observation handles chunk boundaries and skips oversized events', () =
   observer.push(Buffer.from('da')); observer.push(Buffer.from('ta: {"ok":1}\n\n'));
   observer.push(Buffer.from('data: ' + 'x'.repeat(40))); observer.push(Buffer.from('\n\ndata: {"ok":2}\n\n'));
   assert.deepEqual(observed, ['{"ok":1}', '{"ok":2}']);
+});
+
+test('worker startup grace does not spend the per-operation deadline', async t => {
+  const { root } = fixture(t);
+  const workerFile = path.join(root, 'slow-start.cjs');
+  fs.writeFileSync(workerFile, `const {parentPort}=require('node:worker_threads');setTimeout(()=>parentPort.postMessage({ready:true}),120);parentPort.on('message',m=>parentPort.postMessage({id:m.id,result:{ok:true}}));`);
+  const engine = new FilterEngine(root, undefined, { workerPath: workerFile, requestTimeoutMs: 50, readyWaitMs: 1000, startupTimeoutMs: 2000 });
+  t.after(() => engine.close());
+  assert.equal(engine.status().workerState, 'starting');
+  const result = await engine.call('probe');
+  assert.equal(result.ok, true); assert.equal(engine.status().workerRestarts, 0);
+});
+
+test('worker failure is reported without secret exception text and recovers with a fresh registry', async t => {
+  const { root } = fixture(t);
+  const workerFile = path.join(root, 'crash-once.cjs');
+  const marker = path.join(root, 'started');
+  fs.writeFileSync(workerFile, `const fs=require('node:fs'),{parentPort}=require('node:worker_threads');if(!fs.existsSync(${JSON.stringify(marker)})){fs.writeFileSync(${JSON.stringify(marker)},'1');throw Object.assign(new Error('secret-body-must-not-be-logged'),{code:'PROBE_FAILURE'});}parentPort.postMessage({ready:true});parentPort.on('message',m=>parentPort.postMessage({id:m.id,result:{ok:true}}));`);
+  const events = [];
+  const engine = new FilterEngine(root, undefined, { workerPath: workerFile, restartDelayMs: 10, maxRestarts: 2, onDiagnostic: e => events.push(e) });
+  t.after(() => engine.close());
+  for (let i = 0; i < 100 && !engine.status().workerFiltering; i++) await new Promise(r => setTimeout(r, 20));
+  assert.equal(engine.status().workerFiltering, true);
+  assert.equal(engine.status().workerRestarts, 1);
+  assert.equal(engine.status().lastWorkerError.code, 'PROBE_FAILURE');
+  assert.ok(!JSON.stringify(events).includes('secret-body'));
+  assert.equal((await engine.call('probe')).ok, true);
+});
+
+test('a timed-out worker cannot permanently disable filtering without diagnostics', async t => {
+  const { root } = fixture(t); const workerFile = path.join(root, 'timeout.cjs');
+  fs.writeFileSync(workerFile, `const {parentPort}=require('node:worker_threads');parentPort.postMessage({ready:true});parentPort.on('message',m=>{if(m.operation==='stats')parentPort.postMessage({id:m.id,result:{ok:true}});});`);
+  const engine = new FilterEngine(root, undefined, { workerPath: workerFile, requestTimeoutMs: 30, restartDelayMs: 10, maxRestarts: 1 });
+  t.after(() => engine.close());
+  assert.equal(await engine.call('stalled'), null);
+  for (let i = 0; i < 100 && !engine.status().workerFiltering; i++) await new Promise(r => setTimeout(r, 20));
+  assert.equal(engine.status().workerRestarts, 1);
+  assert.equal(engine.status().lastWorkerError.kind, 'request_timeout');
+  assert.equal((await engine.stats()).ok, true);
+});
+
+test('bounded diagnostic files never retain request data or credentials', t => {
+  const { root } = fixture(t); const directory = path.join(root, 'diagnostics');
+  const log = diagnosticWriter(directory, 300);
+  for (let i = 0; i < 8; i++) log({ event: 'worker_failed', kind: 'worker_error', code: 'ENOENT', generation: i,
+    headers: { authorization: 'SECRET' }, body: 'SECRET', message: 'SECRET', path: 'SECRET', url: 'SECRET' });
+  const files = fs.readdirSync(directory);
+  assert.ok(files.length <= 2);
+  for (const name of files) {
+    const text = fs.readFileSync(path.join(directory, name), 'utf8');
+    assert.ok(!text.includes('SECRET')); assert.ok(Buffer.byteLength(text) <= 300);
+  }
 });

@@ -5,6 +5,7 @@ const filter = new SessionFilter(workerData.root, workerData.options);
 const waiting = new Map();
 const active = new Map();
 function streamKey(connection, stream) { return `${connection}:${stream || ''}`; }
+parentPort.postMessage({ ready: true });
 
 parentPort.on('message', message => {
   const { id, operation } = message;

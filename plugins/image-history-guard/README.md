@@ -1,6 +1,6 @@
 # Image History Guard
 
-Experimental local proxy for the default ChatGPT-authenticated Codex provider, addressing repeated structured inline-image replay. Version 0.2.0 replaces the old “keep last occurrence” policy with stable first-image references.
+Experimental local proxy for the default ChatGPT-authenticated Codex provider, addressing repeated structured inline-image replay. Version 0.2.0 replaced the old “keep last occurrence” policy with stable first-image references.
 
 ## What changes
 
@@ -58,3 +58,15 @@ The repository suite passed 36 tests, including verified identity/fork/account i
 A live Windows Desktop backend test used three baseline turns and three filtered turns with the same 564,642-byte red PNG, followed by an explicit view_image reload and proxy restart/full-history replay. All eight turns returned the correct color. The repeat-image incremental frame shrank from 755,308 to 2,904 bytes; the explicit reload retained the image pixels. Filtered follow-up cached/input ratios were 97.10% and 97.95%; the restart/replay turn reported 99.13%. The separate baseline's third turn reported 96.97%.
 
 These were separate ephemeral threads with different startup context sizes, so they establish compatibility and observed cache reuse, not a controlled cost/latency comparison or a subscription-quota savings guarantee. Enabling a new transformation in an existing chat can also cause an initial prefix change. Large distinct image histories, native image-generation result payloads and server-side retention remain outside this workaround's guarantees.
+
+## Native tool routing and worker recovery (0.2.1)
+
+The proxy only examines JSON POST requests to the exact Responses endpoint, and JSON response.create messages on the exact Responses WebSocket endpoint. Compaction input is bypassed. All other upstream-relative endpoints, HTTP methods, request encodings and non-Responses WebSocket messages are forwarded without parsing or rewriting their bodies. This includes images/generations, images/edits, web tools and future native endpoints. Unknown API routes no longer produce a synthetic local 404. The destination remains the original fixed upstream; capability checks, origin rejection and traversal protection remain in place. Passthrough request bodies stream directly, without the filter's buffering/size limit.
+
+Worker startup readiness has its own deadline and does not consume a processing deadline. Cache startup inventories metadata and validates image contents lazily on first use. Worker faults/timeouts are visible in status and trigger up to three fresh-worker recoveries per proxy lifetime. New workers have no trusted response lineage; originals are retained until a new successful chain is observed. During startup/recovery/disabled filtering, requests pass through unchanged. This does not make a stopped proxy network-transparent: the listener still needs to run while its route is configured.
+
+Status now distinguishes starting/ready/recovering/disabled states, restart count and the last worker error code. Bounded diagnostic files in the plugin data diagnostics directory retain lifecycle/error metadata only (two segments, roughly 1 MiB each). They do not contain exception messages, stacks, auth headers, URLs, query strings, image identifiers, file paths or request/response bodies. These diagnostics cannot reconstruct the unlogged cause of an older 0.2.0 worker exit.
+
+The 2026-10-22 regression tests cover unchanged native image/web requests, multipart/gzip, arbitrary methods, larger opaque bodies, non-Responses WebSockets, delayed startup, worker crash recovery, timeout recovery and diagnostic redaction/rotation. A local mocked model service was used for route/body preservation; this is distinct from a successful cloud image generation. After installing 0.2.1, run upgrade and restart Codex so built-in tools stop using the old process's cached proxy route.
+
+An unauthenticated live route probe on 2026-10-22 reproduced the old proxy's empty local 404 at images/generations; the fixed proxy reached the official upstream and relayed its 401 response. No user credentials or image generation charge were involved. The full repository suite passed 42 tests. This probe confirms forwarding, not a successful cloud-generated image; existing clients must restart to stop using an old cached proxy route.
