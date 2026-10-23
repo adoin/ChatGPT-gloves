@@ -2,10 +2,6 @@
 
 Reusable Codex plugins and skills.
 
-## Image History Guard
-
-[Image History Guard](plugins/image-history-guard/README.md) keeps the first image in place and uses stable references for repeats within a verified conversation/account. Cross-turn references require confirmed response lineage; full replays keep a recoverable original. It stores bounded local image copies, supports view_image recovery and worker-thread hashing, and preserves original transcripts. HTTP/SSE and WebSocket transports are supported. Enable/upgrade and rollback are explicit; cache/token savings must be measured rather than inferred from upload size.
-
 ## Test Gate
 
 ## Local SSH Deploy
@@ -64,7 +60,7 @@ In ChatGPT, type `@` and select **Specification Update** or **Conversation Hando
 
 ## Distribution policy
 
-Codex plugins are distributed through the GitHub-backed marketplace. Image History Guard additionally provides the standalone `image-history-guard` npm CLI for service management from PowerShell or another terminal; see its [guide](plugins/image-history-guard/README.md). The previously published `chatgpt-gloves` npm package is a frozen legacy snapshot and will not receive plugin updates.
+Codex plugins are distributed through the GitHub-backed marketplace. Image History Guard has been withdrawn and is no longer distributed. The previously published `chatgpt-gloves` npm package is a frozen legacy snapshot and will not receive plugin updates.
 
 ## Configuration
 
