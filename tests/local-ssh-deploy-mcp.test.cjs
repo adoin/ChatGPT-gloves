@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const readline = require('node:readline');
 const { spawn, spawnSync } = require('node:child_process');
+const { createRequire } = require('node:module');
 const test = require('node:test');
 
 const pluginRoot = path.resolve(__dirname, '../plugins/local-ssh-deploy');
@@ -15,6 +16,113 @@ const serverPath = path.join(pluginRoot, 'mcp', 'server.cjs');
 const editorPath = path.join(pluginRoot, 'mcp', 'profile-editor.html');
 const pickerPath = path.join(pluginRoot, 'scripts', 'pick-identity-file.ps1');
 const editorUri = 'ui://local-ssh-deploy/connection-editor-v2.html';
+
+test('password editor saves only credential references and authenticates without model-visible secrets', { skip: process.platform !== 'win32' }, async t => {
+  const item = fixture();
+  const client = startServer(item);
+  const localRequire = createRequire(path.join(pluginRoot, 'package.json'));
+  const { Server, utils } = localRequire('ssh2');
+  const { Entry } = localRequire('@napi-rs/keyring');
+  const secret = 'fixture-password-!$"空格 secret';
+  const hostKey = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ format: 'pem', type: 'pkcs1' });
+  let authenticated = 0;
+  let remoteFile = Buffer.alloc(0);
+  const sshServer = new Server({ hostKeys: [hostKey] }, socket => {
+    socket.on('error', () => {});
+    socket.on('authentication', ctx => {
+      if (ctx.method === 'password' && ctx.username === 'fixture' && ctx.password === secret) { authenticated++; ctx.accept(); }
+      else ctx.reject(['password']);
+    });
+    socket.on('ready', () => socket.on('session', accept => {
+      const session = accept();
+      session.on('exec', accept => { const stream = accept(); stream.write('fixture connected\n'); stream.exit(7); stream.end(); });
+      session.on('sftp', accept => {
+        const sftp = accept();
+        const attributes = () => ({ mode: 0o100600, uid: 0, gid: 0, size: remoteFile.length, atime: 0, mtime: 0 });
+        sftp.on('OPEN', (id, name, flags) => {
+          if (name !== '/fixture-file') return sftp.status(id, 2);
+          if (flags & 0x10) remoteFile = Buffer.alloc(0);
+          sftp.handle(id, Buffer.from('fixture'));
+        });
+        sftp.on('FSTAT', id => sftp.attrs(id, attributes()));
+        sftp.on('STAT', id => sftp.attrs(id, attributes()));
+        sftp.on('WRITE', (id, _handle, offset, data) => {
+          const next = Buffer.alloc(Math.max(remoteFile.length, offset + data.length));
+          remoteFile.copy(next); data.copy(next, offset); remoteFile = next; sftp.status(id, 0);
+        });
+        sftp.on('READ', (id, _handle, offset, length) => {
+          if (offset >= remoteFile.length) sftp.status(id, 1);
+          else sftp.data(id, remoteFile.subarray(offset, offset + length));
+        });
+        sftp.on('CLOSE', id => sftp.status(id, 0));
+      });
+    }));
+  });
+  await new Promise(resolve => sshServer.listen(0, '127.0.0.1', resolve));
+  const port = sshServer.address().port;
+  const storePath = path.join(item.localAppData, 'OpenAI/Codex/local-ssh-deploy/connections.json');
+  t.after(() => {
+    if (fs.existsSync(storePath)) for (const value of Object.values(JSON.parse(fs.readFileSync(storePath)).connections))
+      if (value.passwordRef) new Entry('codex.local-ssh-deploy', value.passwordRef).deleteCredential();
+    client.stop(); sshServer.close();
+    fs.rmSync(item.root, { recursive: true, force: true });
+  });
+  await initialize(client);
+  const opened = await call(client, 2, 'add_remote_server_connection', {});
+  const saveUrl = new URL('tool/save_connection', opened._meta.editorUrl);
+  const payload = { connectionName: 'password-fixture', host: '127.0.0.1', port, username: 'fixture',
+    authType: 'password', password: secret, overwriteExisting: false };
+  const blocked = await call(client, 3, 'save_connection', payload);
+  assert.equal(blocked.isError, true);
+  assert.doesNotMatch(JSON.stringify(blocked), /fixture-password/);
+  const response = await fetch(saveUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+  assert.equal(response.status, 200);
+  assert.doesNotMatch(await response.text(), /fixture-password|passwordRef/);
+  const stored = JSON.parse(fs.readFileSync(storePath));
+  const reference = stored.connections['password-fixture'].passwordRef;
+  assert.doesNotMatch(fs.readFileSync(storePath, 'utf8'), /fixture-password/);
+  assert.equal(new Entry('codex.local-ssh-deploy', reference).getPassword(), secret);
+  const handle = (await call(client, 4, 'get_connection', { connectionName: 'password-fixture' })).structuredContent;
+  assert.ok(handle.passwordClientPath);
+  assert.doesNotMatch(JSON.stringify(handle), /fixture-password|127\.0\.0\.1|passwordRef/);
+  const knownFile = path.join(item.root, '.ssh/known_hosts');
+  fs.mkdirSync(path.dirname(knownFile));
+  const run = (action = 'exec', args = ['fixture-command']) => new Promise(resolve => {
+    const child = spawn(process.execPath, [handle.passwordClientPath, handle.sshAlias, action, ...args], {
+      env: { ...process.env, LOCALAPPDATA: item.localAppData, USERPROFILE: item.root, HOME: item.root }, windowsHide: true,
+    });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', x => { stdout += x; }); child.stderr.on('data', x => { stderr += x; });
+    child.once('exit', code => resolve({ code, stdout, stderr }));
+  });
+  const untrusted = await run();
+  assert.equal(untrusted.code, 1); assert.match(untrusted.stderr, /host key/); assert.equal(authenticated, 0);
+  fs.writeFileSync(knownFile, `[127.0.0.1]:${port} ssh-rsa ${utils.parseKey(hostKey).getPublicSSH().toString('base64')}\n`);
+  const success = await run();
+  assert.equal(success.code, 7, success.stderr); assert.equal(success.stdout, 'fixture connected\n');
+  assert.doesNotMatch(success.stderr, /fixture-password/);
+  const upload = path.join(item.root, 'upload.txt'), download = path.join(item.root, 'download.txt');
+  fs.writeFileSync(upload, 'file-transfer-fixture');
+  const uploaded = await run('upload', [upload, '/fixture-file']);
+  assert.equal(uploaded.code, 0, uploaded.stderr);
+  assert.equal(remoteFile.toString(), 'file-transfer-fixture');
+  const downloaded = await run('download', ['/fixture-file', download]);
+  assert.equal(downloaded.code, 0, downloaded.stderr);
+  assert.equal(fs.readFileSync(download, 'utf8'), 'file-transfer-fixture');
+  new Entry('codex.local-ssh-deploy', reference).setPassword('wrong-fixture');
+  const wrong = await run(); assert.equal(wrong.code, 1); assert.match(wrong.stderr, /authentication failed/);
+  const replacement = await fetch(saveUrl, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...payload, overwriteExisting: true }) });
+  assert.equal(replacement.status, 200);
+  assert.equal(new Entry('codex.local-ssh-deploy', reference).getPassword(), null);
+  const replacementRef = JSON.parse(fs.readFileSync(storePath)).connections['password-fixture'].passwordRef;
+  assert.notEqual(replacementRef, reference);
+  assert.equal((await run()).code, 7);
+  const deleted = await call(client, 5, 'delete_connection', { connectionName: 'password-fixture', confirmDelete: true });
+  assert.equal(deleted.isError, undefined);
+  assert.equal(new Entry('codex.local-ssh-deploy', reference).getPassword(), null);
+  assert.equal(new Entry('codex.local-ssh-deploy', replacementRef).getPassword(), null);
+});
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'local-ssh-connection-test-'));

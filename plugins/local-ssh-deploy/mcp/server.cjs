@@ -11,7 +11,7 @@ const readline = require('node:readline');
 const { spawn, spawnSync } = require('node:child_process');
 
 const SERVER_NAME = 'local-ssh-deploy';
-const SERVER_VERSION = '0.1.0';
+const SERVER_VERSION = '0.2.0';
 const profileEditorPath = path.resolve(__dirname, 'profile-editor.html');
 const pickerScript = path.resolve(__dirname, '../scripts/pick-identity-file.ps1');
 const PROFILE_EDITOR_URI = 'ui://local-ssh-deploy/connection-editor-v2.html';
@@ -102,6 +102,12 @@ function normalizeConnection(value, options = {}) {
   if (typeof value.username !== 'string' || !/^[A-Za-z_][A-Za-z0-9_.-]{0,63}$/.test(value.username)) {
     throw new Error('username must start with a letter or underscore and contain only letters, digits, underscore, dot, or hyphen.');
   }
+  if (value.authType === 'password') {
+    if (!/^[a-f0-9-]{36}$/.test(value.passwordRef || '')) throw new Error('Password credential reference is missing.');
+    if (value.identityFilePath) throw new Error('Password authentication does not use a private-key file.');
+    return { host: value.host, port: value.port, username: value.username, authType: 'password', passwordRef: value.passwordRef };
+  }
+  if (value.authType && value.authType !== 'privateKey') throw new Error('Unsupported authentication type.');
   if (typeof value.identityFilePath !== 'string' || value.identityFilePath.length === 0 || value.identityFilePath.length > 1024) {
     throw new Error('identityFilePath must be a non-empty absolute local path.');
   }
@@ -236,8 +242,9 @@ function renderSshConfig(document) {
       `  HostName ${connection.host}`,
       `  Port ${connection.port}`,
       `  User ${connection.username}`,
-      `  IdentityFile ${quoteSshConfigValue(connection.identityFilePath)}`,
-      '  BatchMode yes',
+      ...(connection.authType === 'password' ? [
+        '  PreferredAuthentications password,keyboard-interactive', '  PubkeyAuthentication no', '  BatchMode no',
+      ] : [`  IdentityFile ${quoteSshConfigValue(connection.identityFilePath)}`, '  BatchMode yes']),
       '  IdentitiesOnly yes',
       '  StrictHostKeyChecking yes',
       '  ConnectTimeout 15',
@@ -299,13 +306,14 @@ const connectionSchema = {
       minLength: 1,
       maxLength: 1024,
     },
+    authType: { type: 'string', enum: ['privateKey', 'password'], default: 'privateKey' },
     overwriteExisting: {
       type: 'boolean',
       title: '覆盖同名连接',
       default: false,
     },
   },
-  required: ['connectionName', 'host', 'port', 'username', 'identityFilePath', 'overwriteExisting'],
+  required: ['connectionName', 'host', 'port', 'username', 'overwriteExisting'],
   additionalProperties: false,
 };
 
@@ -398,6 +406,7 @@ const tools = [
         sshConfigPath: { type: 'string' },
         platform: { type: 'string' },
         sshExecutable: { type: 'string' },
+        passwordClientPath: { type: 'string' },
       },
       required: ['connectionName', 'sshAlias', 'sshConfigPath', 'platform', 'sshExecutable'],
       additionalProperties: false,
@@ -430,8 +439,8 @@ const tools = [
   },
 ];
 
-function saveConnection(value) {
-  const expected = new Set(['connectionName', 'host', 'port', 'username', 'identityFilePath', 'overwriteExisting']);
+function saveConnection(value, { localEditor = false } = {}) {
+  const expected = new Set(['connectionName', 'host', 'port', 'username', 'authType', 'identityFilePath', 'overwriteExisting', ...(localEditor ? ['password'] : [])]);
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Connection form data must be an object.');
   }
@@ -444,13 +453,33 @@ function saveConnection(value) {
   if (typeof value.overwriteExisting !== 'boolean') {
     throw new Error('overwriteExisting must be boolean.');
   }
-  const connection = normalizeConnection(value, { requireIdentityFile: true });
   const document = readStore();
   if (Object.hasOwn(document.connections, value.connectionName) && !value.overwriteExisting) {
     throw new Error(`Connection "${value.connectionName}" already exists. Select the overwrite control to replace it.`);
   }
+  const previous = document.connections[value.connectionName];
+  if (value.authType !== 'password' && Object.hasOwn(value, 'password')) throw new Error('Private-key authentication does not accept a password field.');
+  let passwordRef;
+  if (value.authType === 'password') {
+    if (!localEditor) throw new Error('Password connections must be saved in the local browser editor. Never send passwords through MCP tools.');
+    if (typeof value.password !== 'string' || !value.password.length || Buffer.byteLength(value.password) > 2000 || /[\u0000\r\n]/.test(value.password))
+      throw new Error('Enter a password of 1–2000 UTF-8 bytes without line breaks.');
+    passwordRef = crypto.randomUUID();
+  }
+  const connection = normalizeConnection({ ...value, passwordRef }, { requireIdentityFile: true });
+  if (passwordRef) require('./credentials.cjs').set(passwordRef, value.password);
   document.connections[value.connectionName] = connection;
-  const store = writeStore(document);
+  let store;
+  try { store = writeStore(document); }
+  catch (error) {
+    // Metadata may already have committed before a config/ACL error. Never
+    // delete a credential that the durable connection may now reference.
+    let committed = true;
+    try { committed = readStore().connections[value.connectionName]?.passwordRef === passwordRef; } catch {}
+    if (passwordRef && !committed) require('./credentials.cjs').remove(passwordRef);
+    throw error;
+  }
+  if (previous?.passwordRef) require('./credentials.cjs').remove(previous.passwordRef);
   return {
     content: [{ type: 'text', text: `Saved SSH remote connection "${value.connectionName}".` }],
     structuredContent: { connectionName: value.connectionName },
@@ -477,7 +506,7 @@ function getConnection(value) {
   if (!connection) {
     throw new Error(`Connection "${value.connectionName}" does not exist.`);
   }
-  try {
+  if (connection.authType !== 'password') try {
     if (!fs.statSync(connection.identityFilePath).isFile()) {
       throw new Error('not a file');
     }
@@ -493,6 +522,10 @@ function getConnection(value) {
     platform: runtime.platform,
     sshExecutable: runtime.sshExecutable,
   };
+  if (connection.authType === 'password') {
+    require('./credentials.cjs').get(connection.passwordRef);
+    output.passwordClientPath = path.resolve(__dirname, '../scripts/ssh-password.cjs');
+  }
   return {
     content: [{ type: 'text', text: `Prepared an opaque SSH handle for connection "${value.connectionName}" on ${runtime.platform}. Raw connection fields and private key contents were not returned.` }],
     structuredContent: output,
@@ -508,8 +541,10 @@ function deleteConnection(value) {
   if (!Object.hasOwn(document.connections, value.connectionName)) {
     throw new Error(`Connection "${value.connectionName}" does not exist.`);
   }
+  const previous = document.connections[value.connectionName];
   delete document.connections[value.connectionName];
   const store = writeStore(document);
+  if (previous.passwordRef) require('./credentials.cjs').remove(previous.passwordRef);
   return {
     content: [{ type: 'text', text: `Deleted SSH connection "${value.connectionName}".` }],
     structuredContent: { connectionName: value.connectionName, deleted: true },
@@ -598,7 +633,7 @@ async function handleEditorHttpRequest(request, response) {
     }
     try {
       const argumentsValue = await readJsonBody(request);
-      const result = toolName === 'save_connection' ? saveConnection(argumentsValue) : pickIdentityFile();
+      const result = toolName === 'save_connection' ? saveConnection(argumentsValue, { localEditor: true }) : pickIdentityFile();
       sendHttpJson(response, result.isError ? 400 : 200, result);
     } catch (error) {
       sendHttpJson(response, 400, { content: [{ type: 'text', text: error.message }], isError: true });
@@ -774,7 +809,7 @@ async function handleRequest(message) {
         protocolVersion: message.params?.protocolVersion || '2025-06-18',
         capabilities: { tools: {}, resources: {} },
         serverInfo: { name: SERVER_NAME, title: 'Local SSH Connections', version: SERVER_VERSION },
-        instructions: 'Treat “添加一个远程服务器连接” as a request for this plugin unless the user explicitly asks for a Codex remote worker. list_connections returns names only; never call get_connection merely to enumerate or describe saved connections. Call get_connection only immediately before an actual requested server task. It returns an opaque SSH alias and dedicated config path, never raw host, username, port, or identity-file path. Use native ssh/scp/rsync with -F <sshConfigPath> <sshAlias>. Never read the connection store, generated SSH config, or private key contents.',
+        instructions: 'Treat “添加一个远程服务器连接” as a request for this plugin unless the user explicitly asks for a Codex remote worker. list_connections returns names only; never call get_connection merely to enumerate or describe saved connections. Call get_connection only immediately before an actual requested server task. It returns an opaque SSH alias and dedicated config path, never raw host, username, port, or identity-file path. For key connections use native ssh/scp/rsync with -F <sshConfigPath> <sshAlias>. When passwordClientPath is returned, use node <passwordClientPath> <sshAlias> exec COMMAND (or upload/download for a single file); this local helper obtains the saved OS credential internally. Never read the connection store, generated SSH config, or private key contents.',
       });
       return;
     case 'ping':
@@ -833,6 +868,7 @@ function handleMessage(message) {
   handleRequest(message).catch((error) => sendError(message.id, -32603, error.message));
 }
 
+if (require.main === module) {
 const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 input.on('line', (line) => {
   if (!line.trim()) {
@@ -849,3 +885,5 @@ input.on('close', () => {
     editorHttpServer.close();
   }
 });
+}
+module.exports = { readStore, connectionAlias, storeInfo };

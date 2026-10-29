@@ -6,7 +6,7 @@ Reusable Codex plugins and skills.
 
 ## Local SSH Deploy
 
-Local SSH Deploy opens a native form and securely persists named deployment profiles in Windows DPAPI, macOS Keychain, or Linux Secret Service, independently of conversations and projects. It publishes the current local project using the machine's own `ssh`, `scp`, and `tar`, requires confirmation of a hashed dry run, stores only an absolute private-key path, and never reads or stores private key contents. See the [plugin guide](plugins/local-ssh-deploy/README.md) for prerequisites and usage.
+Local SSH Remote saves named SSH connections using private-key files or passwords in the system credential store. Key connections use native OpenSSH; saved-password connections use a local SSH/SFTP client without exposing passwords through model-visible tools or command-line arguments. See the [plugin guide](plugins/local-ssh-deploy/README.md) for setup and usage.
 
 ## Conversation Lifeboat
 

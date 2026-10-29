@@ -1,6 +1,6 @@
 {
   "name": "local-ssh-deploy",
-  "version": "0.1.0+codex.20260914040427",
+  "version": "0.2.0",
   "description": "Save and recall reusable SSH server connection metadata so Codex can use the current system's native remote tools.",
   "author": {
     "name": "adoin",
@@ -21,7 +21,7 @@
   "interface": {
     "displayName": "Local SSH Remote",
     "shortDescription": "Save SSH connections for Codex to use with native tools.",
-    "longDescription": "Opens a local connection editor with a native private-key path picker and saves named SSH connection metadata in permission-restricted user files. Inventory returns names only. For actual server work, Codex receives a hashed SSH alias and dedicated config path while OpenSSH reads the real host, username, port, and identity-file path directly. Raw connection fields, commands, passwords, and private key contents are not returned to the model.",
+    "longDescription": "Save named SSH connections using a private-key file or a password held in the OS credential store. Inventory returns names only; server tasks use opaque handles without exposing credentials to the model.",
     "developerName": "adoin",
     "category": "Productivity",
     "capabilities": [
@@ -30,7 +30,8 @@
       "Embedded connection profile editor",
       "Native private-key path picker",
       "Cross-platform user-level storage",
-      "Opaque native SSH handles"
+      "Opaque native SSH handles",
+      "Password authentication with OS credential storage"
     ],
     "defaultPrompt": [
       "Add a remote server connection and open its secure editor.",

@@ -36,6 +36,7 @@
     }
 
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
 
     body {
       margin: 0;
@@ -84,7 +85,7 @@
       font: inherit;
     }
 
-    input[type="text"], input[type="number"], textarea {
+    input[type="text"], input[type="password"], input[type="number"], select, textarea {
       width: 100%;
       border: 1px solid var(--border);
       border-radius: 10px;
@@ -212,6 +213,20 @@
       </div>
 
       <div class="field">
+        <label for="authType">鉴权方式</label>
+        <select id="authType" name="authType">
+          <option value="privateKey">私钥文件</option>
+          <option value="password">账户密码</option>
+        </select>
+      </div>
+
+      <div class="field" id="password-field" hidden>
+        <label for="password">SSH 密码</label>
+        <input id="password" name="password" type="password" disabled maxlength="2000" autocomplete="new-password">
+        <p class="hint">保存在本机系统凭据库中，后续连接自动使用。</p>
+      </div>
+
+      <div class="field" id="key-field">
         <label for="identityFilePath">本机私钥绝对路径</label>
         <div class="path-row">
           <input id="identityFilePath" name="identityFilePath" type="text" required maxlength="1024" autocomplete="off" placeholder="C:\Users\name\.ssh\id_ed25519">
@@ -238,6 +253,21 @@
       const saveButton = document.getElementById('save');
       const pickButton = document.getElementById('pick-file');
       const pathInput = document.getElementById('identityFilePath');
+      const authInput = document.getElementById('authType');
+      const passwordInput = document.getElementById('password');
+      const localEditor = location.protocol === 'http:' && location.hostname === '127.0.0.1';
+      // Passwords must never travel through MCP calls or the embedding bridge.
+      if (!localEditor) authInput.querySelector('[value="password"]').disabled = true;
+      authInput.addEventListener('change', () => {
+        const passwordMode = authInput.value === 'password';
+        document.getElementById('password-field').hidden = !passwordMode;
+        document.getElementById('key-field').hidden = passwordMode;
+        pathInput.required = !passwordMode;
+        pathInput.disabled = passwordMode;
+        passwordInput.required = passwordMode;
+        passwordInput.disabled = !passwordMode;
+        if (!passwordMode) passwordInput.value = '';
+      });
       const status = document.getElementById('status');
       const pending = new Map();
       let nextRequestId = 1;
@@ -269,6 +299,7 @@
       }
 
       async function callTool(name, args) {
+        if ('password' in args && !localEditor) throw new Error('请在本机浏览器窗口中保存密码连接。');
         if (location.protocol === 'http:' && location.hostname === '127.0.0.1') {
           const response = await fetch(`tool/${name}`, {
             method: 'POST',
@@ -347,6 +378,11 @@
           identityFilePath: String(values.get('identityFilePath') || '').trim(),
           overwriteExisting: values.get('overwriteExisting') === 'on',
         };
+        if (authInput.value === 'password') {
+          payload.authType = 'password';
+          delete payload.identityFilePath;
+          payload.password = passwordInput.value;
+        }
 
         try {
           const raw = await callTool('save_connection', payload);
@@ -354,9 +390,11 @@
           if (result?.isError) throw new Error(result.content?.[0]?.text || '保存失败。');
           const savedName = result?.structuredContent?.connectionName || payload.connectionName;
           setStatus(`连接 ${savedName} 已安全保存。`, 'success');
+          passwordInput.value = '';
         } catch (error) {
           setStatus(error.message || '保存失败，请检查填写内容。', 'error');
         } finally {
+          delete payload.password;
           saveButton.disabled = false;
         }
       });

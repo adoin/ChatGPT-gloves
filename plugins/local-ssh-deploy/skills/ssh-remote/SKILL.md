@@ -9,9 +9,9 @@ This plugin is an SSH connection address book. It stores connection metadata and
 
 ## Connection boundary
 
-- A connection contains only `connectionName`, host, port, username, and the absolute local `identityFilePath`.
+- Connections contain a name, host, port, username and either an absolute local private-key path or an opaque password credential reference. Existing key connections need no migration.
 - Never request, read, display, copy, upload, or store private key contents. If the user supplies key text, stop and request a local absolute path instead.
-- Do not store commands, working directories, deployment paths, passwords, tokens, or task-specific values in a connection.
+- Passwords are entered only in the system-browser editor and saved in the OS credential store. Never request a password in chat, send it through MCP tools, read it into model context, or put it in arguments/environment variables. Do not store plaintext passwords, commands, directories, tokens, or task-specific values in connection metadata.
 - Connections are local to the current OS user and survive task closure, project deletion, and plugin updates.
 - A saved server is an SSH target, not a Codex remote worker. Only use remote-worker setup when the user explicitly requests that different capability.
 - Treat raw host, username, port, and identity-file path as private connection metadata. Never repeat them in chat or request them through `get_connection` merely to answer an inventory question.
@@ -23,9 +23,16 @@ This plugin is an SSH connection address book. It stores connection metadata and
 3. Call `get_connection` only immediately before performing an actual user-requested task on one named server. It returns an opaque `sshAlias`, a permission-restricted `sshConfigPath`, the platform, and the SSH executable name. It never returns the host, username, port, or identity-file path.
 4. Use `delete_connection` only after the user explicitly confirms the exact connection name; pass `confirmDelete: true` only then.
 
+## Password connections
+
+- Install the plugin’s locked dependencies with `npm ci --ignore-scripts --no-audit --no-fund` from the plugin root when needed. Passwords use Windows Credential Manager, macOS Keychain or Linux Secret Service. Missing/locked credentials fail closed; never fall back to plaintext storage.
+- `get_connection` adds `passwordClientPath` for password connections. Use `node <passwordClientPath> <sshAlias> exec "COMMAND"` for commands, `upload LOCAL REMOTE` or `download REMOTE LOCAL` for a single file. The helper retrieves credentials internally and performs no automatic command retries. It supports password authentication, not MFA or arbitrary keyboard-interactive challenges.
+- Do not use native `ssh/scp/rsync` for automatic saved-password login. The helper verifies the server key against the current user’s OpenSSH `known_hosts`/`known_hosts2` and the standard system known-hosts file. Missing, changed, revoked, or certificate-only trust is refused. Ask the user to verify and establish trust separately. It does not inherit arbitrary OpenSSH configuration such as ProxyJump; do not silently bypass those requirements.
+- `save_connection` through MCP accepts key connection metadata only. Password submissions must go through the loopback browser editor, never an embedded MCP form.
+
 ## Let Codex perform the task
 
-- After `get_connection`, use the local shell and native `ssh`, `scp`, `sftp`, or `rsync` tools appropriate for the returned platform and the user's requested outcome.
+- For key connections, after `get_connection`, use the local shell and native `ssh`, `scp`, `sftp`, or `rsync` tools appropriate for the returned platform and the user's requested outcome.
 - Address the server only as `ssh -F <sshConfigPath> <sshAlias>` or the equivalent `-F` form for the selected native tool. OpenSSH reads the real host, username, port, and identity-file path from the restricted config. Do not add `-i`, `-p`, `-l`, a raw hostname, or a username from any other source.
 - Never read or print `connections.json` or the generated `ssh_config`; they are implementation details intended for the plugin and OpenSSH, not model context.
 - Never disable host-key verification. If the host is not yet trusted, stop and ask the user to verify and add its fingerprint through a separate trusted process.

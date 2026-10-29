@@ -25,6 +25,10 @@ function verify() {
     {
       name: "local-ssh-deploy",
       files: [
+        "package.json",
+        "package-lock.json",
+        "mcp/credentials.cjs",
+        "scripts/ssh-password.cjs",
         ".mcp.json",
         "README.md",
         "mcp/profile-editor.html",

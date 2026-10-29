@@ -24,9 +24,9 @@ Each named connection contains only:
 - host;
 - SSH port;
 - SSH username;
-- the private key's absolute local path.
+- either the private key's absolute local path, or the password authentication type and an opaque OS credential reference.
 
-Private key contents, passwords, commands, remote directories, and deployment settings are never stored. The private key itself remains in the user's SSH directory and is never read or uploaded by the plugin.
+Private key contents, plaintext passwords, commands, remote directories, and deployment settings are never stored in connection files. Saved passwords reside only in the system credential store. The private key itself remains in the user's SSH directory and is never read or uploaded by the plugin.
 
 Connection names support Chinese and other Unicode letters, numbers, spaces, dots, underscores, and hyphens. Leading or trailing spaces and punctuation are rejected.
 
@@ -47,7 +47,7 @@ These locations survive task closure, project deletion, and plugin updates. They
 - `add_remote_server_connection`: opens the bundled HTML connection editor;
 - `save_connection`: validates and saves connection metadata;
 - `list_connections`: returns saved connection names only;
-- `get_connection`: returns only an opaque SSH alias, the restricted SSH config path, platform, and executable name;
+- `get_connection`: returns an opaque SSH alias, restricted SSH config path, platform, executable name and, for password connections, the local client script path;
 - `delete_connection`: removes one explicitly confirmed connection;
 - `pick_identity_file`: returns only a selected absolute path.
 
@@ -69,6 +69,16 @@ Use it later:
 把 build.zip 上传到“生产服务器”的 /srv/app
 ```
 
-Inventory questions use `list_connections` and return names only. Immediately before an actual server task, Codex calls `get_connection` and receives an opaque handle, then runs `ssh -F <sshConfigPath> <sshAlias>` or the equivalent native-tool form. The real host, username, port, and identity-file path stay in the restricted local files and are read directly by OpenSSH. Host-key verification must remain enabled. Read-only inspections can follow a clear request; remote mutations and file transfers require confirmation of the exact target and action.
+Inventory questions use `list_connections` and return names only. Immediately before an actual server task, Codex calls `get_connection` and receives an opaque handle, then, for private-key connections, runs `ssh -F <sshConfigPath> <sshAlias>` or the equivalent native-tool form. The real host, username, port, and identity-file path stay in the restricted local files and are read directly by OpenSSH. Host-key verification must remain enabled. Read-only inspections can follow a clear request; remote mutations and file transfers require confirmation of the exact target and action.
 
 The plugin cannot provide cryptographic isolation from a Codex task running with unrestricted filesystem access under the same OS account. Its normal tools and skill are designed to keep raw connection metadata out of model-visible tool results, chat replies, and command lines; Full Access can still technically read any same-user file if explicitly directed to do so.
+
+## Password authentication
+
+Version 0.2 adds an authentication selector in the local browser editor. Existing private-key connections continue to work. Install locked runtime dependencies with `npm ci --ignore-scripts --no-audit --no-fund` in the plugin directory.
+
+Password connections store only an opaque reference in connections.json. The password is stored using Windows Credential Manager, macOS Keychain or Linux Secret Service, and is not returned by MCP tools. Enter it only in the local browser window; embedded MCP forms cannot submit passwords. System credential storage must be available and unlocked. Credentials remain accessible to other software running as the same OS user.
+
+For actual server work, get_connection returns passwordClientPath. Run `node <passwordClientPath> <sshAlias> exec "COMMAND"`, `upload LOCAL REMOTE`, or `download REMOTE LOCAL`. Password connections use this helper rather than injecting passwords into native ssh command lines. Each operation connects once; there are no automatic retries. This transport supports password authentication and single-file SFTP, not MFA, interactive shells, directory recursion or arbitrary OpenSSH settings such as ProxyJump. Native private-key operations are unchanged.
+
+The helper requires an exact trusted host key in the standard OpenSSH known-hosts files; unknown, changed, revoked or certificate-only keys are refused. Verify fingerprints and establish trust separately. Changing authentication type or overwriting/deleting a connection removes the previous credential. A server must permit SSH password authentication.
