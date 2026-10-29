@@ -29,6 +29,8 @@ function verify() {
         "package-lock.json",
         "mcp/credentials.cjs",
         "scripts/ssh-password.cjs",
+        "scripts/connection-terminal.cjs",
+        "scripts/connection-terminal.ps1",
         ".mcp.json",
         "README.md",
         "mcp/profile-editor.html",

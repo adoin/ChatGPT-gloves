@@ -51,7 +51,7 @@ These locations survive task closure, project deletion, and plugin updates. They
 - `delete_connection`: removes one explicitly confirmed connection;
 - `pick_identity_file`: returns only a selected absolute path.
 
-On Windows, the file picker uses the built-in Windows PowerShell/WinForms dialog. This tiny adapter is the only remaining PowerShell script; storage and remote work do not depend on PowerShell. macOS uses `osascript`, and Linux uses `zenity` or `kdialog` when available. Manual absolute-path entry is always available.
+On Windows, the file picker uses the built-in Windows PowerShell/WinForms dialog. Storage and ordinary remote operations do not depend on PowerShell; the optional Windows connection-confirmation window requires PowerShell 7. macOS uses `osascript`, and Linux uses `zenity` or `kdialog` when available. Manual absolute-path entry is always available.
 
 ## Use
 
@@ -81,4 +81,10 @@ Password connections store only an opaque reference in connections.json. The pas
 
 For actual server work, get_connection returns passwordClientPath. Run `node <passwordClientPath> <sshAlias> exec "COMMAND"`, `upload LOCAL REMOTE`, or `download REMOTE LOCAL`. Password connections use this helper rather than injecting passwords into native ssh command lines. Each operation connects once; there are no automatic retries. This transport supports password authentication and single-file SFTP, not MFA, interactive shells, directory recursion or arbitrary OpenSSH settings such as ProxyJump. Native private-key operations are unchanged.
 
-The helper requires an exact trusted host key in the standard OpenSSH known-hosts files; unknown, changed, revoked or certificate-only keys are refused. Verify fingerprints and establish trust separately. Changing authentication type or overwriting/deleting a connection removes the previous credential. A server must permit SSH password authentication.
+The helper requires an exact trusted host key in the standard OpenSSH known-hosts files; unknown, changed, revoked or certificate-only keys are refused. On Windows the connection-confirmation tool can guide first-use trust interactively. Changing authentication type or overwriting/deleting a connection removes the previous credential. A server must permit SSH password authentication.
+
+## Connection confirmation window
+
+On Windows, `open_connection_terminal` opens a visible PowerShell 7 window for the saved connection. For a new host, review the displayed fingerprint against a trusted source and type yes or no in that window. Password connections authenticate automatically after confirmation; private-key connections use native OpenSSH and may request an encrypted-key passphrase. The PowerShell window remains open after the check. The tool does not replay any previous server command, deployment or file transfer.
+
+Changed or revoked host keys are refused and never automatically removed or replaced. Noninteractive operations continue to enforce strict trust. Only first-use confirmation adds the exact received key to the current user’s known_hosts. Passwords never appear in the window, process arguments or model-visible results.

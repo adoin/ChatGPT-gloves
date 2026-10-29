@@ -11,7 +11,7 @@ const readline = require('node:readline');
 const { spawn, spawnSync } = require('node:child_process');
 
 const SERVER_NAME = 'local-ssh-deploy';
-const SERVER_VERSION = '0.2.0';
+const SERVER_VERSION = require('../package.json').version;
 const profileEditorPath = path.resolve(__dirname, 'profile-editor.html');
 const pickerScript = path.resolve(__dirname, '../scripts/pick-identity-file.ps1');
 const PROFILE_EDITOR_URI = 'ui://local-ssh-deploy/connection-editor-v2.html';
@@ -318,6 +318,13 @@ const connectionSchema = {
 };
 
 const tools = [
+  {
+    name: 'open_connection_terminal',
+    title: '打开 SSH 连接确认窗口',
+    description: 'Open a visible PowerShell terminal for a saved connection when host trust needs review. The user alone confirms unknown fingerprints. Passwords are sent only after host verification. Changed/revoked keys are never replaced; no task command is replayed.',
+    inputSchema: { type: 'object', properties: { connectionName: { type: 'string', minLength: 1, maxLength: 64 } }, required: ['connectionName'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  },
   {
     name: 'add_remote_server_connection',
     title: '添加 SSH 远程连接',
@@ -773,6 +780,25 @@ async function callTool(params) {
     throw new Error('Tool name is required.');
   }
   switch (params.name) {
+    case 'open_connection_terminal': {
+      if (process.platform !== 'win32') throw new Error('The connection confirmation window currently requires Windows PowerShell 7.');
+      const prepared = getConnection(params.arguments || {}).structuredContent;
+      if (process.env.LOCAL_SSH_DEPLOY_SKIP_TERMINAL_OPEN === '1') return { structuredContent: { connectionName: prepared.connectionName, windowOpened: false }, content: [] };
+      await new Promise((resolve, reject) => {
+        const quote = value => "'" + value.replaceAll("'", "''") + "'";
+        const body = `& ${quote(path.resolve(__dirname, '../scripts/connection-terminal.ps1'))} -NodePath ${quote(process.execPath)} -ClientPath ${quote(path.resolve(__dirname, '../scripts/connection-terminal.cjs'))} -Alias ${quote(prepared.sshAlias)}`;
+        const encoded = Buffer.from(body, 'utf16le').toString('base64');
+        // Start-Process creates a real console with interactive stdin. Merely
+        // spawning a detached process with ignored stdio can leave stdin=NUL.
+        const launcher = `$ErrorActionPreference='Stop'; Start-Process -FilePath 'pwsh.exe' -ArgumentList @('-NoLogo','-NoProfile','-NoExit','-EncodedCommand','${encoded}') -WindowStyle Normal`;
+        const child = spawn('pwsh.exe', ['-NoLogo', '-NoProfile', '-EncodedCommand', Buffer.from(launcher, 'utf16le').toString('base64')],
+          { windowsHide: true, stdio: 'ignore' });
+        child.once('error', () => reject(new Error('Could not open PowerShell 7. Install it and retry.')));
+        child.once('exit', code => code === 0 ? resolve() : reject(new Error('Could not open the connection confirmation terminal.')));
+      });
+      return { structuredContent: { connectionName: prepared.connectionName, windowOpened: true },
+        content: [{ type: 'text', text: 'Connection confirmation terminal opened. Ask the user to review its fingerprint and choose yes or no in that window.' }] };
+    }
     case 'add_remote_server_connection':
       return openConnectionEditor(params.arguments || {});
     case 'save_connection':

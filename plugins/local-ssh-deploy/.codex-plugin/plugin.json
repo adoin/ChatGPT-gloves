@@ -1,6 +1,6 @@
 {
   "name": "local-ssh-deploy",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Save and recall reusable SSH server connection metadata so Codex can use the current system's native remote tools.",
   "author": {
     "name": "adoin",
@@ -31,7 +31,8 @@
       "Native private-key path picker",
       "Cross-platform user-level storage",
       "Opaque native SSH handles",
-      "Password authentication with OS credential storage"
+      "Password authentication with OS credential storage",
+      "Interactive host fingerprint confirmation"
     ],
     "defaultPrompt": [
       "Add a remote server connection and open its secure editor.",

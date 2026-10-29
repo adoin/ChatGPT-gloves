@@ -17,6 +17,34 @@ const editorPath = path.join(pluginRoot, 'mcp', 'profile-editor.html');
 const pickerPath = path.join(pluginRoot, 'scripts', 'pick-identity-file.ps1');
 const editorUri = 'ui://local-ssh-deploy/connection-editor-v2.html';
 
+test('host confirmation requires explicit yes and never replaces changed or revoked keys', async t => {
+  const item = fixture();
+  t.after(() => fs.rmSync(item.root, { recursive: true, force: true }));
+  const localRequire = createRequire(path.join(pluginRoot, 'package.json'));
+  const { utils } = localRequire('ssh2');
+  const { confirmHost, knownKeys } = require(path.join(pluginRoot, 'scripts/ssh-password.cjs'));
+  const generate = () => utils.parseKey(crypto.generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ format: 'pem', type: 'pkcs1' })).getPublicSSH();
+  const key = generate(), changed = generate();
+  const file = path.join(item.root, '.ssh/known_hosts');
+  const connection = { host: 'example.test', port: 2222 };
+  assert.equal(await confirmHost(connection, key, [file], async () => 'no'), false);
+  assert.equal(fs.existsSync(file), false);
+  let prompt;
+  assert.equal(await confirmHost(connection, key, [file], async value => { prompt = value; return 'yes'; }), true);
+  assert.match(prompt, /SHA256:/);
+  assert.equal(knownKeys(connection.host, connection.port, [file])(key), true);
+  const before = fs.readFileSync(file, 'utf8');
+  let asked = false;
+  const mustNotPrompt = async () => { asked = true; return 'yes'; };
+  assert.equal(await confirmHost(connection, key, [file], mustNotPrompt), true);
+  await assert.rejects(confirmHost(connection, changed, [file], mustNotPrompt), /SSH_HOST_KEY_CHANGED/);
+  assert.equal(asked, false);
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+  fs.appendFileSync(file, `@revoked [example.test]:2222 ssh-rsa ${key.toString('base64')}\n`);
+  await assert.rejects(confirmHost(connection, key, [file], mustNotPrompt), /SSH_HOST_KEY_REVOKED/);
+  assert.equal(asked, false);
+});
+
 test('password editor saves only credential references and authenticates without model-visible secrets', { skip: process.platform !== 'win32' }, async t => {
   const item = fixture();
   const client = startServer(item);
@@ -84,6 +112,9 @@ test('password editor saves only credential references and authenticates without
   assert.equal(new Entry('codex.local-ssh-deploy', reference).getPassword(), secret);
   const handle = (await call(client, 4, 'get_connection', { connectionName: 'password-fixture' })).structuredContent;
   assert.ok(handle.passwordClientPath);
+  const terminal = await call(client, 40, 'open_connection_terminal', { connectionName: 'password-fixture' });
+  assert.deepEqual(terminal.structuredContent, { connectionName: 'password-fixture', windowOpened: false });
+  assert.doesNotMatch(JSON.stringify(terminal), /fixture-password|127\.0\.0\.1|passwordRef/);
   assert.doesNotMatch(JSON.stringify(handle), /fixture-password|127\.0\.0\.1|passwordRef/);
   const knownFile = path.join(item.root, '.ssh/known_hosts');
   fs.mkdirSync(path.dirname(knownFile));
@@ -140,6 +171,7 @@ function startServer(item) {
       ...process.env,
       LOCALAPPDATA: item.localAppData,
       LOCAL_SSH_DEPLOY_SKIP_BROWSER_OPEN: '1',
+      LOCAL_SSH_DEPLOY_SKIP_TERMINAL_OPEN: '1',
     },
     windowsHide: true,
   });
@@ -235,6 +267,7 @@ test('server exposes connection-address-book tools and the bundled editor', asyn
   client.send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
   const listed = await client.receive();
   assert.deepEqual(listed.result.tools.map((tool) => tool.name), [
+    'open_connection_terminal',
     'add_remote_server_connection',
     'save_connection',
     'pick_identity_file',
@@ -243,10 +276,10 @@ test('server exposes connection-address-book tools and the bundled editor', asyn
     'delete_connection',
   ]);
   assert.equal(listed.result.tools.some((tool) => /command|deploy/i.test(tool.name)), false);
-  const editorTool = listed.result.tools[0];
+  const editorTool = listed.result.tools.find(tool => tool.name === 'add_remote_server_connection');
   assert.equal(editorTool._meta.ui.resourceUri, editorUri);
-  assert.deepEqual(listed.result.tools[1]._meta.ui.visibility, ['app']);
-  assert.deepEqual(listed.result.tools[2]._meta.ui.visibility, ['app']);
+  assert.deepEqual(listed.result.tools.find(tool => tool.name === 'save_connection')._meta.ui.visibility, ['app']);
+  assert.deepEqual(listed.result.tools.find(tool => tool.name === 'pick_identity_file')._meta.ui.visibility, ['app']);
 
   const opened = await call(client, 3, 'add_remote_server_connection', { suggestedConnectionName: '生产服务器' });
   assert.equal(opened.structuredContent.suggestedConnectionName, '生产服务器');
@@ -378,7 +411,7 @@ test('connection validation rejects task fields and private key contents', async
   assert.match(keyText.content[0].text, /Private key contents are forbidden/);
 });
 
-test('platform branches do not require PowerShell outside the Windows file picker', () => {
+test('platform-specific UI adapters preserve native file selection', () => {
   const server = fs.readFileSync(serverPath, 'utf8');
   assert.match(server, /platform: 'windows'/);
   assert.match(server, /platform: 'macos'/);
@@ -387,7 +420,7 @@ test('platform branches do not require PowerShell outside the Windows file picke
   assert.match(server, /command = 'osascript'/);
   assert.match(server, /command = 'zenity'/);
   assert.match(server, /command = 'kdialog'/);
-  assert.doesNotMatch(server, /pwsh|profiles\.ps1|remote\.ps1|deploy\.ps1/);
+  assert.doesNotMatch(server, /profiles\.ps1|remote\.ps1|deploy\.ps1/);
   assert.match(server, /command = 'powershell\.exe'/);
 
   const picker = fs.readFileSync(pickerPath, 'utf8');
