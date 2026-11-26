@@ -2,6 +2,10 @@
 
 Reusable Codex plugins and skills.
 
+## Free Game Dev Assets
+
+[Free Game Dev Assets](plugins/free-game-dev-assets/README.md) bundles a game-asset sourcing skill and a pinned local catalog with read-only search, license screening and starter-stack MCP tools. Queries work offline with Node.js 22+, without npm dependencies or global MCP configuration. Final asset choices still require checking the original creator's license and intended redistribution terms. Install with `codex plugin add free-game-dev-assets@chatgpt-gloves` after refreshing the marketplace.
+
 ## Test Gate
 
 ## Local SSH Deploy
@@ -37,7 +41,7 @@ The equivalent Codex command is:
 codex plugin marketplace add https://github.com/adoin/ChatGPT-gloves
 ```
 
-Open `/plugins`, select the `chatgpt-gloves` marketplace, and install `conversation-lifeboat` or `local-ssh-deploy`. Conversation Lifeboat has no executable hooks to trust. Other plugins retain their own normal hook review flow.
+Open `/plugins`, select the `chatgpt-gloves` marketplace, and install `free-game-dev-assets`, `conversation-lifeboat` or `local-ssh-deploy`. Conversation Lifeboat has no executable hooks to trust. Other plugins retain their own normal hook review flow.
 
 Conversation Lifeboat consists of manual skills and requires no background service or npm dependencies.
 

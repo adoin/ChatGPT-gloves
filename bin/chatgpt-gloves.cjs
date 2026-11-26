@@ -14,6 +14,17 @@ function verify() {
   const marketplace = readJson(marketplacePath);
   const pluginRequirements = [
     {
+      name: "free-game-dev-assets",
+      files: [
+        ".mcp.json", "package.json", "mcp/server.mjs", "mcp/catalog.mjs", "scripts/fgda.mjs",
+        "scripts/sync-upstream.mjs", "upstream-lock.json", "data/catalog.json",
+        "vendor/fgda/site/cli/mcp.mjs", "vendor/fgda/site/lib/catalog-query.mjs",
+        "vendor/fgda/LICENSE", "LICENSE", "THIRD_PARTY_NOTICES.md",
+        "skills/free-game-asset-sourcing/SKILL.md",
+        "skills/free-game-asset-sourcing/references/catalog.md"
+      ]
+    },
+    {
       name: "conversation-lifeboat",
       files: [
         "hooks/hooks.json",

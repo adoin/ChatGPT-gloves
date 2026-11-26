@@ -1,0 +1,7 @@
+interface:
+  display_name: "Free Game Asset Sourcing"
+  short_description: "Find game assets and verify their source license terms."
+  default_prompt: "Use $free-game-asset-sourcing to find assets for my game and verify commercial use, attribution and redistribution terms at the source."
+
+policy:
+  allow_implicit_invocation: true

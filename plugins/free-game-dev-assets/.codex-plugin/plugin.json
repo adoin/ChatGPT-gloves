@@ -1,0 +1,20 @@
+{
+  "name": "free-game-dev-assets",
+  "version": "0.1.0",
+  "description": "Find free game assets and tools using a local catalog, then verify the creator's license for the intended use.",
+  "author": { "name": "adoin", "url": "https://github.com/adoin" },
+  "homepage": "https://github.com/adoin/ChatGPT-gloves/tree/main/plugins/free-game-dev-assets",
+  "repository": "https://github.com/adoin/ChatGPT-gloves",
+  "license": "MIT",
+  "keywords": ["game", "assets", "licensing", "mcp"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Free Game Dev Assets",
+    "shortDescription": "Find game assets and check their license requirements.",
+    "developerName": "adoin",
+    "category": "Productivity",
+    "capabilities": ["Offline asset catalog search", "License screening", "Starter stacks", "Source license verification workflow"],
+    "defaultPrompt": ["为我的游戏寻找可商用的免费素材，并核对原作者许可与署名要求。", "为 Godot 原型挑选一套风格一致的免费素材。"]
+  }
+}

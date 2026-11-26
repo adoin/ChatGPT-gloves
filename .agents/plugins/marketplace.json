@@ -5,6 +5,12 @@
   },
   "plugins": [
     {
+      "name": "free-game-dev-assets",
+      "source": { "source": "local", "path": "./plugins/free-game-dev-assets" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    },
+    {
       "name": "conversation-lifeboat",
       "source": {
         "source": "local",

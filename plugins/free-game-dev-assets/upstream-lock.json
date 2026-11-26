@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 1,
+  "catalog": {
+    "repository": "TMHSDigital/Free-Game-Dev-Assets",
+    "codeRevision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+    "release": "v2026.11.01"
+  },
+  "skill": {
+    "repository": "adoin/my-skills",
+    "revision": "7f3cd0760e0bf47b1c63de36ff03f4b92fef6b67",
+    "path": "free-game-asset-sourcing",
+    "private": true
+  },
+  "files": [
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "site/cli/mcp.mjs",
+      "target": "vendor/fgda/site/cli/mcp.mjs",
+      "private": false,
+      "sha256": "518653982ba5a3495c600f8ef852b0265298fe9217b06fa35e952362e0f61275"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "site/cli/data.mjs",
+      "target": "vendor/fgda/site/cli/data.mjs",
+      "private": false,
+      "sha256": "ba1e7b9046fc3ffbde7b3f19c22a68f5f9f58c49d9816f1da93e3b65a580b970"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "site/cli/fgda.mjs",
+      "target": "vendor/fgda/site/cli/fgda.mjs",
+      "private": false,
+      "sha256": "780094e460c2748e1ee2435e7c27ef1b5776469de7f939651f2343cb9805d57b"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "site/lib/catalog-query.mjs",
+      "target": "vendor/fgda/site/lib/catalog-query.mjs",
+      "private": false,
+      "sha256": "3b6e77536703f767a6b088eaa4e88409963b8527c3267240513443462776223a"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "site/lib/search.mjs",
+      "target": "vendor/fgda/site/lib/search.mjs",
+      "private": false,
+      "sha256": "2c6d7b53c0593f9973a28b7f3d3bf06d154d35a92099ae5734d3c9ca50fa02b3"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "site/lib/shared.mjs",
+      "target": "vendor/fgda/site/lib/shared.mjs",
+      "private": false,
+      "sha256": "fc7af2d9e7450be17b7a6cdb5d46df411a7b6096b8dbb02ae80bb16bc4517746"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "LICENSE",
+      "target": "vendor/fgda/LICENSE",
+      "private": false,
+      "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499"
+    },
+    {
+      "repository": "adoin/my-skills",
+      "revision": "7f3cd0760e0bf47b1c63de36ff03f4b92fef6b67",
+      "source": "free-game-asset-sourcing/SKILL.md",
+      "target": "skills/free-game-asset-sourcing/SKILL.md",
+      "private": true,
+      "sha256": "2a04411d4e694cbdb14791a3e410dab987e4f832872ca5b68a0c256b1ae69851"
+    },
+    {
+      "repository": "adoin/my-skills",
+      "revision": "7f3cd0760e0bf47b1c63de36ff03f4b92fef6b67",
+      "source": "free-game-asset-sourcing/references/catalog.md",
+      "target": "skills/free-game-asset-sourcing/references/catalog.md",
+      "private": true,
+      "sha256": "655884d8e332bcfc06e2fbab0d14673a24f1d91e27e3d9dff5981d2907abeced"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "release": "v2026.11.01",
+      "assetId": 697831894,
+      "downloadUrl": "https://github.com/TMHSDigital/Free-Game-Dev-Assets/releases/download/v2026.11.01/data.json",
+      "target": "data/catalog.json",
+      "private": false,
+      "sha256": "c169ead2462073e6736ccfe8c882c08ce4c2de32e81c4c4d444452e9b5a4641d"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "site/lib/stacks.mjs",
+      "target": "vendor/fgda/site/lib/stacks.mjs",
+      "private": false,
+      "sha256": "075811092bbd90d9e4a1b866f6a757e2b31504cf9dbc7864b4324a9f521dc038"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "stacks/2d-pixel-platformer.md",
+      "target": "vendor/fgda/stacks/2d-pixel-platformer.md",
+      "private": false,
+      "sha256": "06ea9c1b29a86ad149b0fc4b492933ed936c53ca0a0ad1f368128e617f0d6af5"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "stacks/2d-top-down-pixel.md",
+      "target": "vendor/fgda/stacks/2d-top-down-pixel.md",
+      "private": false,
+      "sha256": "e76f168cb776a43d721c361db7a4f6367f367ceffe302ae2d2580f5be4885c47"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "stacks/3d-low-poly-arena-godot.md",
+      "target": "vendor/fgda/stacks/3d-low-poly-arena-godot.md",
+      "private": false,
+      "sha256": "e8168b8e395cda2803139628e34f585d7727b4c295a29f499a1ee824a04226ae"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "stacks/3d-third-person-unreal.md",
+      "target": "vendor/fgda/stacks/3d-third-person-unreal.md",
+      "private": false,
+      "sha256": "9234ddb5f6314ec64a4b0aa890c0549c81686379698669308db4795b087e93e8"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "stacks/first-person-destruction.md",
+      "target": "vendor/fgda/stacks/first-person-destruction.md",
+      "private": false,
+      "sha256": "bf9d6b3b14e05485f9ea2039a6fa2be9895558733e0647a331509f3861033fd3"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "stacks/jam-2d-no-credit.md",
+      "target": "vendor/fgda/stacks/jam-2d-no-credit.md",
+      "private": false,
+      "sha256": "0cd845efd5ab622b450c28b7cfec4701ca6db19fbdd1beaf0f1ebdae51713346"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "stacks/jam-3d-low-poly.md",
+      "target": "vendor/fgda/stacks/jam-3d-low-poly.md",
+      "private": false,
+      "sha256": "d8d2166a4ddefb0ec2b53d4ca3e6ac4120e2dfe4550a7bb1a4d54a9aa3fe24e8"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "stacks/jam-audio-10-minutes.md",
+      "target": "vendor/fgda/stacks/jam-audio-10-minutes.md",
+      "private": false,
+      "sha256": "dfdb091e8ad72dd0f8fcd1ffce7308031963f1ac7b8d29ab4c0f1042bdc51fb4"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "stacks/mobile-puzzle.md",
+      "target": "vendor/fgda/stacks/mobile-puzzle.md",
+      "private": false,
+      "sha256": "8427a53d1c0def0affb99e4c45d03c0c561d93afbca0ad929e576f788736680a"
+    },
+    {
+      "repository": "TMHSDigital/Free-Game-Dev-Assets",
+      "revision": "2161a7fc06191621fd2e00f1bf5004bf8d433b96",
+      "source": "site/lib/owes.mjs",
+      "target": "vendor/fgda/site/lib/owes.mjs",
+      "private": false,
+      "sha256": "d0e1aa2559e4a862e9248c3018965a9dc4c61a4b262fa81450c1d97daa68d77d"
+    }
+  ]
+}

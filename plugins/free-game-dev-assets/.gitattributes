@@ -1,0 +1,6 @@
+# Preserve the exact upstream bytes used by upstream-lock.json, including on
+# Windows checkouts with core.autocrlf=true.
+/vendor/** -text
+/data/catalog.json -text
+/skills/free-game-asset-sourcing/SKILL.md -text
+/skills/free-game-asset-sourcing/references/catalog.md -text
